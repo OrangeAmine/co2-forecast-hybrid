@@ -207,7 +207,7 @@ def train_and_evaluate(
         return _run_tft(cfg, train_df.copy(), val_df.copy(), test_df.copy(), run_name)
     else:
         dm = CO2DataModule(cfg)
-        dm._build_datasets(train_df, val_df, test_df)
+        dm.build_datasets(train_df, val_df, test_df)
 
         if model_name == "sarima":
             return _run_sarima(cfg, dm, run_name)

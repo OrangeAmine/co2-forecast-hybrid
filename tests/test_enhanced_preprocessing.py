@@ -6,12 +6,12 @@ import pytest
 
 from src.data.pipeline import (
     _clip_outliers,
-    _compute_dco2,
     _compute_outlier_bounds,
     _denoise_co2,
     _interpolate_gaps,
     _log_nan_impact,
 )
+from src.data.preprocessing import compute_dco2
 
 
 # ---------------------------------------------------------------------------
@@ -108,7 +108,7 @@ class TestInterpolateGaps:
 
 
 # ---------------------------------------------------------------------------
-#  Tests — _compute_dco2
+#  Tests — compute_dco2
 # ---------------------------------------------------------------------------
 
 class TestComputeDCO2:
@@ -117,13 +117,13 @@ class TestComputeDCO2:
     def test_first_row_nan(self):
         """First row should be NaN (no previous value)."""
         df = _base_df(50)
-        result = _compute_dco2(df, interval_minutes=5)
+        result = compute_dco2(df, interval_minutes=5)
         assert pd.isna(result["dCO2"].iloc[0])
 
     def test_units_ppm_per_hour(self):
         """dCO2 should be in ppm/hour units."""
         df = pd.DataFrame({"CO2": [400.0, 410.0, 420.0]})
-        result = _compute_dco2(df, interval_minutes=5)
+        result = compute_dco2(df, interval_minutes=5)
         # 10 ppm change over 5 min = 10 / (5/60) = 120 ppm/h
         assert abs(result["dCO2"].iloc[1] - 120.0) < 1e-6
 

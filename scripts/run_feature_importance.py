@@ -174,7 +174,7 @@ def importance_xgboost(
 
     # Aggregate importance by original feature (sum across lookback positions)
     try:
-        raw_importances = model.model.estimators_[0].feature_importances_
+        raw_importances = model.model_.estimators_[0].feature_importances_
         # Reshape to (lookback, n_features) and sum across lookback
         if len(raw_importances) == n_features_flat:
             reshaped = raw_importances.reshape(lookback, n_cols)
@@ -187,7 +187,9 @@ def importance_xgboost(
             })
         else:
             gain_df = pd.DataFrame(columns=["feature", "gain_importance"])
-    except Exception:
+    except Exception as e:
+        logger.error(f"XGBoost gain importance extraction failed: {e}", exc_info=True)
+        print(f"  XGBoost gain importance extraction failed: {e}")
         gain_df = pd.DataFrame(columns=["feature", "gain_importance"])
 
     gain_df.to_csv(output_dir / "xgboost_importance.csv", index=False)
@@ -216,7 +218,7 @@ def importance_catboost(
     feature_names = dm.feature_columns + [dm.target_column]
 
     try:
-        raw_importances = model.model.estimators_[0].get_feature_importance(
+        raw_importances = model.model_.estimators_[0].get_feature_importance(
             type="PredictionValuesChange"
         )
         n_features_flat = lookback * n_cols
@@ -342,9 +344,9 @@ def importance_nn_permutation(
     trainer, run_dir = create_trainer(config, model_name=f"importance_{model_name}")
     trainer.fit(model, datamodule=dm)
 
-    # Load best checkpoint
+    # Load best checkpoint (config is excluded from saved hparams, so pass explicitly)
     best_ckpt = trainer.checkpoint_callback.best_model_path
-    best_model = model_cls.load_from_checkpoint(best_ckpt)
+    best_model = model_cls.load_from_checkpoint(best_ckpt, config=config)
     best_model.eval()
 
     imp_df = permutation_importance_nn(best_model, dm, n_repeats=n_repeats)
@@ -372,8 +374,12 @@ def importance_sarima(
     model.fit(train_series)
 
     try:
-        params = model.model.params
-        param_names = model.model.param_names if hasattr(model.model, "param_names") else \
+        result = model.result_
+        if result is None:
+            raise RuntimeError("SARIMA model has no stored result object. Was fit() called?")
+
+        params = result.params
+        param_names = result.param_names if hasattr(result, "param_names") else \
             [f"param_{i}" for i in range(len(params))]
 
         coef_df = pd.DataFrame({
@@ -382,9 +388,10 @@ def importance_sarima(
         })
 
         # p-values if available
-        if hasattr(model.model, "pvalues"):
-            coef_df["pvalue"] = model.model.pvalues
+        if hasattr(result, "pvalues"):
+            coef_df["pvalue"] = result.pvalues
     except Exception as e:
+        logger.error(f"SARIMA coefficient extraction failed: {e}", exc_info=True)
         print(f"  SARIMA coefficient extraction failed: {e}")
         coef_df = pd.DataFrame(columns=["parameter", "coefficient", "pvalue"])
 
@@ -525,12 +532,12 @@ def main() -> None:
         try:
             if model_name == "xgboost":
                 dm = CO2DataModule(config)
-                dm._build_datasets(train_df, val_df, test_df)
+                dm.build_datasets(train_df, val_df, test_df)
                 importance_xgboost(config, dm, output_dir)
 
             elif model_name == "catboost":
                 dm = CO2DataModule(config)
-                dm._build_datasets(train_df, val_df, test_df)
+                dm.build_datasets(train_df, val_df, test_df)
                 importance_catboost(config, dm, output_dir)
 
             elif model_name == "tft":
@@ -538,12 +545,12 @@ def main() -> None:
 
             elif model_name == "sarima":
                 dm = CO2DataModule(config)
-                dm._build_datasets(train_df, val_df, test_df)
+                dm.build_datasets(train_df, val_df, test_df)
                 importance_sarima(config, dm, output_dir)
 
             elif model_name in ["lstm", "cnn_lstm"]:
                 dm = CO2DataModule(config)
-                dm._build_datasets(train_df, val_df, test_df)
+                dm.build_datasets(train_df, val_df, test_df)
                 cls = LSTMForecaster if model_name == "lstm" else CNNLSTMForecaster
                 importance_nn_permutation(cls, config, dm, model_name, output_dir, args.n_repeats)
 
@@ -574,7 +581,9 @@ def main() -> None:
                 trainer.fit(model, datamodule=dm)
 
                 best_ckpt = trainer.checkpoint_callback.best_model_path
-                best_model = HMMLSTMForecaster.load_from_checkpoint(best_ckpt)
+                best_model = HMMLSTMForecaster.load_from_checkpoint(
+                    best_ckpt, config=cfg, input_size=n_input,
+                )
                 best_model.eval()
 
                 imp_df = permutation_importance_nn(best_model, dm, n_repeats=args.n_repeats)
@@ -586,6 +595,7 @@ def main() -> None:
 
         except Exception as e:
             elapsed = time.time() - t0
+            logger.error(f"{model_name} importance failed: {e}", exc_info=True)
             print(f"  FAILED: {e} ({elapsed:.1f}s)")
 
     # Generate combined plots

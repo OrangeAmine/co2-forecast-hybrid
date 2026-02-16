@@ -84,6 +84,7 @@ class SARIMAForecaster:
         self.lookback_steps = self.data_cfg["lookback_hours"] * sph
 
         self.fitted_params_: dict[str, Any] | None = None
+        self.result_: Any | None = None  # Full statsmodels SARIMAXResults object
         self.train_series_: np.ndarray | None = None
 
     def fit(
@@ -122,6 +123,7 @@ class SARIMAForecaster:
             result = model.fit(disp=False, maxiter=200)
 
         self.fitted_params_ = result.params
+        self.result_ = result  # Keep full result for diagnostics (coefficients, p-values, AIC, etc.)
         logger.info("SARIMA fitting complete.")
         return self
 

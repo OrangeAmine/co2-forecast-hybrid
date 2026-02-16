@@ -98,7 +98,7 @@ class CO2DataModule(pl.LightningDataModule):
             variant_config=self.config,
         )
 
-        self._build_datasets(train_df, val_df, test_df)
+        self.build_datasets(train_df, val_df, test_df)
 
     def _setup_from_csv(self) -> None:
         """Load data from a pre-processed CSV file (legacy path)."""
@@ -114,9 +114,9 @@ class CO2DataModule(pl.LightningDataModule):
             self.data_cfg["test_ratio"],
         )
 
-        self._build_datasets(train_df, val_df, test_df)
+        self.build_datasets(train_df, val_df, test_df)
 
-    def _build_datasets(
+    def build_datasets(
         self,
         train_df: pd.DataFrame,
         val_df: pd.DataFrame,

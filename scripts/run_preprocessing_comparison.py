@@ -111,7 +111,7 @@ def _build_datamodule_from_splits(
         Configured CO2DataModule with datasets ready.
     """
     dm = CO2DataModule(config)
-    dm._build_datasets(train_df, val_df, test_df)
+    dm.build_datasets(train_df, val_df, test_df)
     return dm
 
 

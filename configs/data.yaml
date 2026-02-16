@@ -40,5 +40,6 @@ data:
     Noise: [30, 120]
     Pressure: [900, 1100]
 
-  # Gap filling
-  max_ffill_minutes: 30     # forward-fill gaps up to 30 minutes
+  # Gap filling — if not set, pipeline defaults to 30min for 5-min data
+  # and 120min for 1h data (see pipeline.py:run_preprocessing_pipeline)
+  # max_ffill_minutes: 30

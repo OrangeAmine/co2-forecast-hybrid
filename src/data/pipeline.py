@@ -20,7 +20,7 @@ import numpy as np
 import pandas as pd
 from scipy.signal import savgol_filter
 
-from src.data.preprocessing import chronological_split
+from src.data.preprocessing import chronological_split, compute_dco2
 from src.data.raw_processing import run_pipeline as run_raw_pipeline
 
 logger = logging.getLogger(__name__)
@@ -111,11 +111,11 @@ def before_split(
     4. Remove impossible values     (from raw_processing)
     5. Resample to regular grid     (from raw_processing, mean aggregation)
     6. Forward-fill ONLY very short gaps (<=max_ffill_minutes)
-    7. Add DETERMINISTIC temporal features (pure functions of timestamp):
+    7. Rename columns (Temperature->TemperatureExt, etc.)
+    8. Add DETERMINISTIC temporal features (pure functions of timestamp):
        - Day_sin, Day_cos  (hour-of-day cycle)
        - Year_sin, Year_cos (day-of-year cycle)
        NOTE: dCO2 is NOT added here (depends on CO2 values -> post-split).
-    8. Rename columns (Temperature->TemperatureExt, etc.)
 
     Args:
         raw_dir: Path to raw XLS data directory.
@@ -132,7 +132,7 @@ def before_split(
         max_ffill_minutes=max_ffill_minutes,
     )
 
-    # Step 8: Rename columns to match expected feature names
+    # Step 7: Rename columns to match expected feature names
     rename_map = {
         "Temperature": "TemperatureExt",
         "Humidity": "Hrext",
@@ -140,7 +140,7 @@ def before_split(
     }
     df = df.rename(columns=rename_map)
 
-    # Step 7: Deterministic temporal features (pure functions of timestamp)
+    # Step 8: Deterministic temporal features (pure functions of timestamp)
     dt_naive = df.index.tz_localize(None) if df.index.tz is not None else df.index
     hour = dt_naive.hour + dt_naive.minute / 60.0
     day_of_year = dt_naive.dayofyear + hour / 24.0
@@ -197,7 +197,7 @@ def after_split_simple(
         df = df.dropna().reset_index(drop=True)
 
         # Step 11: Compute dCO2
-        df = _compute_dco2(df, interval_minutes)
+        df = compute_dco2(df, interval_minutes)
 
         # Step 12: Drop NaN from dCO2 (first row)
         _log_nan_impact(name, df, "dCO2")
@@ -287,7 +287,7 @@ def after_split_enhanced(
         df = splits[name]
 
         # Step 13: dCO2 from denoised CO2
-        df = _compute_dco2(df, interval_minutes)
+        df = compute_dco2(df, interval_minutes)
 
         # Step 14a: Lag features
         for lag in lag_steps:
@@ -295,6 +295,8 @@ def after_split_enhanced(
             df[col_name] = df["CO2"].shift(lag)
 
         # Step 14b: Rolling statistics
+        # Note: rolling_std with min_periods=1 returns NaN for the first row
+        # (std of a single value is undefined). These NaNs are dropped in step 15.
         for w in rolling_windows:
             df[f"CO2_rolling_mean_{w}"] = df["CO2"].rolling(window=w, min_periods=1).mean()
             df[f"CO2_rolling_std_{w}"] = df["CO2"].rolling(window=w, min_periods=1).std()
@@ -350,23 +352,6 @@ def _interpolate_gaps(
             df[col] = df[col].interpolate(method="linear", limit=max_consecutive)
     return df
 
-
-def _compute_dco2(df: pd.DataFrame, interval_minutes: int) -> pd.DataFrame:
-    """Compute CO2 rate of change (ppm/hour) within a single split.
-
-    First row gets NaN (no previous value), which is dropped later.
-    This avoids cross-split leakage.
-
-    Args:
-        df: DataFrame for a single split.
-        interval_minutes: Sampling interval in minutes.
-
-    Returns:
-        DataFrame with 'dCO2' column added.
-    """
-    hours_per_step = interval_minutes / 60.0
-    df["dCO2"] = df["CO2"].diff() / hours_per_step
-    return df
 
 
 def _denoise_co2(

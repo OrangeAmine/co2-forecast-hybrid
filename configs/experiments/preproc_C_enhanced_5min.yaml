@@ -31,12 +31,10 @@ data:
 
 preprocessing:
   denoising:
-    method: "savgol"
     window_length: 11
     polyorder: 3
     mode: "nearest"
   outlier_detection:
-    method: "iqr"
     multiplier: 3.0
     columns: ["CO2", "TemperatureExt", "Hrext", "Noise", "Pression"]
   lag_steps: [12, 72, 288]
