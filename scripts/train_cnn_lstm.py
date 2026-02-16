@@ -50,6 +50,9 @@ def train_single_horizon(config: dict) -> None:
     print(f"  Lookback: {config['data']['lookback_hours']}h "
           f"({datamodule.lookback_steps} steps)")
     print(f"  Horizon: {horizon}h ({datamodule.horizon_steps} steps)")
+    assert datamodule.train_dataset is not None
+    assert datamodule.val_dataset is not None
+    assert datamodule.test_dataset is not None
     print(f"  Train samples: {len(datamodule.train_dataset)}")
     print(f"  Val samples: {len(datamodule.val_dataset)}")
     print(f"  Test samples: {len(datamodule.test_dataset)}")
@@ -72,9 +75,12 @@ def train_single_horizon(config: dict) -> None:
 
     # Predictions
     predictions = trainer.predict(model, datamodule.test_dataloader(), ckpt_path="best")
-    y_pred_scaled = torch.cat(predictions, dim=0).numpy()
+    assert predictions is not None
+    y_pred_scaled = torch.cat(predictions, dim=0).numpy()  # type: ignore[arg-type]
+    assert datamodule.test_dataset is not None
     y_true_scaled = datamodule.test_dataset.y.numpy()
 
+    assert datamodule.target_scaler is not None
     y_pred = inverse_scale_target(y_pred_scaled, datamodule.target_scaler)
     y_true = inverse_scale_target(y_true_scaled, datamodule.target_scaler)
 

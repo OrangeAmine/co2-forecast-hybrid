@@ -1,5 +1,6 @@
 """Configuration loading utilities for YAML-based hyperparameter management."""
 
+from collections.abc import Sequence
 from pathlib import Path
 from typing import Any
 
@@ -25,7 +26,7 @@ def _deep_merge(base: dict, override: dict) -> dict:
     return merged
 
 
-def load_config(config_paths: list[str | Path]) -> dict[str, Any]:
+def load_config(config_paths: Sequence[str | Path]) -> dict[str, Any]:
     """Load and merge multiple YAML config files.
 
     Later files override earlier ones for duplicate keys. Nested

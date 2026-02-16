@@ -65,7 +65,7 @@ def load_raw_xls_files(raw_dir: Path) -> pd.DataFrame:
         rows = []
         for row_idx in range(3, sheet.nrows):
             rows.append(sheet.row_values(row_idx)[:7])
-        df = pd.DataFrame(rows, columns=col_names)
+        df = pd.DataFrame(rows, columns=col_names)  # type: ignore[arg-type]
         frames.append(df)
 
     combined = pd.concat(frames, ignore_index=True)
@@ -190,7 +190,7 @@ def resample_to_interval(
     df = df.set_index("datetime")
 
     # Convert to UTC for resampling to avoid DST ambiguity issues
-    df.index = df.index.tz_convert("UTC")
+    df.index = pd.DatetimeIndex(df.index).tz_convert("UTC")
 
     resample_rule = f"{interval_minutes}min"
     resampled = df.resample(resample_rule).mean()
@@ -204,7 +204,7 @@ def resample_to_interval(
     logger.info(f"  NaN counts after forward-fill (limit={max_ffill_minutes}min):\n{n_nan.to_string()}")
 
     # Convert back to Europe/Paris
-    resampled.index = resampled.index.tz_convert("Europe/Paris")
+    resampled.index = pd.DatetimeIndex(resampled.index).tz_convert("Europe/Paris")
 
     return resampled
 

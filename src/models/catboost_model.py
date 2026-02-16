@@ -202,6 +202,6 @@ class CatBoostForecaster:
         X_flat = self._flatten_windows(X)
 
         predictions = np.column_stack(
-            [est.predict(X_flat) for est in self.model_.estimators_]
+            [est.predict(X_flat) for est in self.model_.estimators_]  # type: ignore[union-attr]
         )
         return predictions

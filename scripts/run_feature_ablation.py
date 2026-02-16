@@ -89,7 +89,7 @@ def add_group1_12h_harmonic(
             dt = pd.to_datetime(df["datetime"])
         else:
             dt = pd.to_datetime(df.index)
-        hour = dt.dt.hour + dt.dt.minute / 60.0
+        hour = dt.dt.hour + dt.dt.minute / 60.0  # type: ignore[union-attr]
         df["Day12h_sin"] = np.sin(2 * np.pi * hour / 12.0)
         df["Day12h_cos"] = np.cos(2 * np.pi * hour / 12.0)
     return train_df, val_df, test_df, new_cols
@@ -108,8 +108,8 @@ def add_group2_occupancy_proxy(
             dt = pd.to_datetime(df["datetime"])
         else:
             dt = pd.to_datetime(df.index)
-        df["is_weekend"] = (dt.dt.dayofweek >= 5).astype(float)
-        hour = dt.dt.hour
+        df["is_weekend"] = (dt.dt.dayofweek >= 5).astype(float)  # type: ignore[union-attr]
+        hour = dt.dt.hour  # type: ignore[union-attr]
         df["is_active_hours"] = ((hour >= 7) & (hour < 23)).astype(float)
     return train_df, val_df, test_df, new_cols
 
@@ -234,15 +234,20 @@ def _run_pl_model(config, dm, run_name, model_cls):
     val_rmse = float(val_metrics.get("val_loss", float("nan"))) ** 0.5
 
     predictions = trainer.predict(model, dm.test_dataloader(), ckpt_path="best")
-    y_pred_scaled = torch.cat(predictions, dim=0).numpy()
+    assert predictions is not None
+    y_pred_scaled = torch.cat(predictions, dim=0).numpy()  # type: ignore[arg-type]
+    assert dm.test_dataset is not None
     y_true_scaled = dm.test_dataset.y.numpy()
+    assert dm.target_scaler is not None
     y_pred = inverse_scale_target(y_pred_scaled, dm.target_scaler)
     y_true = inverse_scale_target(y_true_scaled, dm.target_scaler)
 
     metrics = compute_metrics(y_true, y_pred)
     # Also evaluate on validation set for decision making
     val_preds = trainer.predict(model, dm.val_dataloader(), ckpt_path="best")
-    y_val_pred_scaled = torch.cat(val_preds, dim=0).numpy()
+    assert val_preds is not None
+    y_val_pred_scaled = torch.cat(val_preds, dim=0).numpy()  # type: ignore[arg-type]
+    assert dm.val_dataset is not None
     y_val_true_scaled = dm.val_dataset.y.numpy()
     y_val_pred = inverse_scale_target(y_val_pred_scaled, dm.target_scaler)
     y_val_true = inverse_scale_target(y_val_true_scaled, dm.target_scaler)
@@ -279,15 +284,20 @@ def _run_hmm_lstm(config, train_df, val_df, test_df, run_name):
     trainer.fit(model, datamodule=dm)
 
     predictions = trainer.predict(model, dm.test_dataloader(), ckpt_path="best")
-    y_pred_scaled = torch.cat(predictions, dim=0).numpy()
+    assert predictions is not None
+    y_pred_scaled = torch.cat(predictions, dim=0).numpy()  # type: ignore[arg-type]
+    assert dm.test_dataset is not None
     y_true_scaled = dm.test_dataset.y.numpy()
+    assert dm.target_scaler is not None
     y_pred = inverse_scale_target(y_pred_scaled, dm.target_scaler)
     y_true = inverse_scale_target(y_true_scaled, dm.target_scaler)
 
     metrics = compute_metrics(y_true, y_pred)
 
     val_preds = trainer.predict(model, dm.val_dataloader(), ckpt_path="best")
-    y_val_pred_scaled = torch.cat(val_preds, dim=0).numpy()
+    assert val_preds is not None
+    y_val_pred_scaled = torch.cat(val_preds, dim=0).numpy()  # type: ignore[arg-type]
+    assert dm.val_dataset is not None
     y_val_true_scaled = dm.val_dataset.y.numpy()
     y_val_pred = inverse_scale_target(y_val_pred_scaled, dm.target_scaler)
     y_val_true = inverse_scale_target(y_val_true_scaled, dm.target_scaler)
@@ -346,7 +356,7 @@ def _run_tft(config, train_df, val_df, test_df, run_name):
 
     trainer.fit(tft, train_dataloaders=train_dl, val_dataloaders=val_dl)
 
-    best_ckpt = trainer.checkpoint_callback.best_model_path
+    best_ckpt = trainer.checkpoint_callback.best_model_path  # type: ignore[union-attr]
     best_tft = tft.__class__.load_from_checkpoint(best_ckpt)
     predictions = best_tft.predict(test_dl, mode="prediction", return_x=False)
     y_pred = torch.cat([p for p in predictions], dim=0).numpy()
@@ -364,6 +374,9 @@ def _run_tft(config, train_df, val_df, test_df, run_name):
 
 def _run_sarima(config, dm, run_name):
     """Train SARIMA and return metrics."""
+    assert dm.train_dataset is not None
+    assert dm.val_dataset is not None
+    assert dm.test_dataset is not None
     X_train = dm.train_dataset.X.numpy()
     y_train = dm.train_dataset.y.numpy()
     X_val = dm.val_dataset.X.numpy()
@@ -381,6 +394,7 @@ def _run_sarima(config, dm, run_name):
     model.fit(train_series)
 
     y_pred_scaled = model.predict_batch(X_test, target_idx=target_idx)
+    assert dm.target_scaler is not None
     y_pred = inverse_scale_target(y_pred_scaled, dm.target_scaler)
     y_true = inverse_scale_target(y_test_scaled, dm.target_scaler)
 
@@ -396,6 +410,9 @@ def _run_sarima(config, dm, run_name):
 
 def _run_xgboost(config, dm, run_name):
     """Train XGBoost and return metrics."""
+    assert dm.train_dataset is not None
+    assert dm.val_dataset is not None
+    assert dm.test_dataset is not None
     X_train = dm.train_dataset.X.numpy()
     y_train = dm.train_dataset.y.numpy()
     X_val = dm.val_dataset.X.numpy()
@@ -407,6 +424,7 @@ def _run_xgboost(config, dm, run_name):
     model.fit(X_train, y_train, X_val, y_val)
 
     y_pred_scaled = model.predict(X_test)
+    assert dm.target_scaler is not None
     y_pred = inverse_scale_target(y_pred_scaled, dm.target_scaler)
     y_true = inverse_scale_target(y_test_scaled, dm.target_scaler)
 
@@ -421,6 +439,9 @@ def _run_xgboost(config, dm, run_name):
 
 def _run_catboost(config, dm, run_name):
     """Train CatBoost and return metrics."""
+    assert dm.train_dataset is not None
+    assert dm.val_dataset is not None
+    assert dm.test_dataset is not None
     X_train = dm.train_dataset.X.numpy()
     y_train = dm.train_dataset.y.numpy()
     X_val = dm.val_dataset.X.numpy()
@@ -432,6 +453,7 @@ def _run_catboost(config, dm, run_name):
     model.fit(X_train, y_train, X_val, y_val)
 
     y_pred_scaled = model.predict(X_test)
+    assert dm.target_scaler is not None
     y_pred = inverse_scale_target(y_pred_scaled, dm.target_scaler)
     y_true = inverse_scale_target(y_test_scaled, dm.target_scaler)
 
@@ -464,7 +486,7 @@ def check_correlation_guardrail(
     if len(valid_cols) < 2:
         return []
 
-    corr_matrix = train_df[valid_cols].corr().abs()
+    corr_matrix = train_df[valid_cols].corr().abs()  # type: ignore[call-overload]
     to_drop = set()
     for i in range(len(valid_cols)):
         for j in range(i + 1, len(valid_cols)):
@@ -574,6 +596,8 @@ def main() -> None:
 
         group_results = {}
         prev_val_rmses = {}
+        new_cols: list[str] = []
+        train_df = pd.DataFrame()  # initialized for type checker; overwritten in loop
 
         for horizon in args.horizons:
             for model_name in args.models:
@@ -640,6 +664,7 @@ def main() -> None:
         previous_vals = [prev_val_rmses.get(k, float("nan")) for k in group_results]
         previous_vals = [v for v in previous_vals if not np.isnan(v)]
 
+        decision = "REJECT"  # default, overwritten below if data available
         if current_vals and previous_vals:
             median_current = np.median(current_vals)
             median_previous = np.median(previous_vals)

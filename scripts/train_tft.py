@@ -148,7 +148,7 @@ def train_single_horizon(config: dict) -> None:
     trainer.test(tft, dataloaders=test_dl, ckpt_path="best")
 
     # Predictions — use best checkpoint
-    best_ckpt = trainer.checkpoint_callback.best_model_path
+    best_ckpt = trainer.checkpoint_callback.best_model_path  # type: ignore[union-attr]
     best_tft = tft.__class__.load_from_checkpoint(best_ckpt)
 
     predictions = best_tft.predict(test_dl, mode="prediction", return_x=False)

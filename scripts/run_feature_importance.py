@@ -96,6 +96,7 @@ def permutation_importance_nn(
     Returns:
         DataFrame with columns: feature, importance_mean, importance_std.
     """
+    assert dm.test_dataset is not None
     X_test = dm.test_dataset.X.numpy().copy()
     y_test = dm.test_dataset.y.numpy()
 
@@ -107,6 +108,7 @@ def permutation_importance_nn(
         X_tensor = torch.from_numpy(X_test).to(device)
         baseline_pred = model(X_tensor).cpu().numpy()
 
+    assert dm.target_scaler is not None
     y_true = inverse_scale_target(y_test, dm.target_scaler)
     y_pred_base = inverse_scale_target(baseline_pred, dm.target_scaler)
     baseline_rmse = compute_metrics(y_true, y_pred_base)["rmse"]
@@ -155,6 +157,9 @@ def importance_xgboost(
     """XGBoost: built-in gain + sklearn permutation importance."""
     from sklearn.inspection import permutation_importance as sklearn_perm_imp
 
+    assert dm.train_dataset is not None
+    assert dm.val_dataset is not None
+    assert dm.test_dataset is not None
     X_train = dm.train_dataset.X.numpy()
     y_train = dm.train_dataset.y.numpy()
     X_val = dm.val_dataset.X.numpy()
@@ -174,7 +179,7 @@ def importance_xgboost(
 
     # Aggregate importance by original feature (sum across lookback positions)
     try:
-        raw_importances = model.model_.estimators_[0].feature_importances_
+        raw_importances = model.model_.estimators_[0].feature_importances_  # type: ignore[index, union-attr]
         # Reshape to (lookback, n_features) and sum across lookback
         if len(raw_importances) == n_features_flat:
             reshaped = raw_importances.reshape(lookback, n_cols)
@@ -186,11 +191,11 @@ def importance_xgboost(
                 "gain_importance": aggregated,
             })
         else:
-            gain_df = pd.DataFrame(columns=["feature", "gain_importance"])
+            gain_df = pd.DataFrame(columns=["feature", "gain_importance"])  # type: ignore[arg-type]
     except Exception as e:
         logger.error(f"XGBoost gain importance extraction failed: {e}", exc_info=True)
         print(f"  XGBoost gain importance extraction failed: {e}")
-        gain_df = pd.DataFrame(columns=["feature", "gain_importance"])
+        gain_df = pd.DataFrame(columns=["feature", "gain_importance"])  # type: ignore[arg-type]
 
     gain_df.to_csv(output_dir / "xgboost_importance.csv", index=False)
     print(f"  XGBoost gain importance saved")
@@ -203,6 +208,9 @@ def importance_catboost(
     output_dir: Path,
 ) -> pd.DataFrame:
     """CatBoost: built-in PredictionValuesChange."""
+    assert dm.train_dataset is not None
+    assert dm.val_dataset is not None
+    assert dm.test_dataset is not None
     X_train = dm.train_dataset.X.numpy()
     y_train = dm.train_dataset.y.numpy()
     X_val = dm.val_dataset.X.numpy()
@@ -218,7 +226,7 @@ def importance_catboost(
     feature_names = dm.feature_columns + [dm.target_column]
 
     try:
-        raw_importances = model.model_.estimators_[0].get_feature_importance(
+        raw_importances = model.model_.estimators_[0].get_feature_importance(  # type: ignore[index, union-attr]
             type="PredictionValuesChange"
         )
         n_features_flat = lookback * n_cols
@@ -232,10 +240,10 @@ def importance_catboost(
                 "prediction_change_importance": aggregated,
             })
         else:
-            imp_df = pd.DataFrame(columns=["feature", "prediction_change_importance"])
+            imp_df = pd.DataFrame(columns=["feature", "prediction_change_importance"])  # type: ignore[arg-type]
     except Exception as e:
         print(f"  CatBoost importance extraction failed: {e}")
-        imp_df = pd.DataFrame(columns=["feature", "prediction_change_importance"])
+        imp_df = pd.DataFrame(columns=["feature", "prediction_change_importance"])  # type: ignore[arg-type]
 
     imp_df.to_csv(output_dir / "catboost_importance.csv", index=False)
     print(f"  CatBoost importance saved")
@@ -301,13 +309,13 @@ def importance_tft(
 
     trainer.fit(tft, train_dataloaders=train_dl, val_dataloaders=val_dl)
 
-    best_ckpt = trainer.checkpoint_callback.best_model_path
+    best_ckpt = trainer.checkpoint_callback.best_model_path  # type: ignore[union-attr]
     best_tft = tft.__class__.load_from_checkpoint(best_ckpt)
 
     # Extract variable importance from TFT's interpret_output
     try:
         raw_predictions = best_tft.predict(test_dl, mode="raw", return_x=True)
-        interpretation = best_tft.interpret_output(raw_predictions, reduction="sum")
+        interpretation = best_tft.interpret_output(raw_predictions, reduction="sum")  # type: ignore[arg-type]
 
         # Variable importance from interpret_output
         var_imp = {}
@@ -324,7 +332,7 @@ def importance_tft(
         ).sort_values("tft_variable_importance", ascending=False)
     except Exception as e:
         print(f"  TFT interpretation failed: {e}")
-        imp_df = pd.DataFrame(columns=["feature", "tft_variable_importance"])
+        imp_df = pd.DataFrame(columns=["feature", "tft_variable_importance"])  # type: ignore[arg-type]
 
     imp_df.to_csv(output_dir / "tft_variable_importance.csv", index=False)
     print(f"  TFT variable importance saved")
@@ -345,7 +353,7 @@ def importance_nn_permutation(
     trainer.fit(model, datamodule=dm)
 
     # Load best checkpoint (config is excluded from saved hparams, so pass explicitly)
-    best_ckpt = trainer.checkpoint_callback.best_model_path
+    best_ckpt = trainer.checkpoint_callback.best_model_path  # type: ignore[union-attr]
     best_model = model_cls.load_from_checkpoint(best_ckpt, config=config)
     best_model.eval()
 
@@ -361,6 +369,7 @@ def importance_sarima(
     output_dir: Path,
 ) -> pd.DataFrame:
     """SARIMA: Report AR/MA coefficients (univariate, no feature importance)."""
+    assert dm.train_dataset is not None
     X_train = dm.train_dataset.X.numpy()
     y_train = dm.train_dataset.y.numpy()
 
@@ -393,7 +402,7 @@ def importance_sarima(
     except Exception as e:
         logger.error(f"SARIMA coefficient extraction failed: {e}", exc_info=True)
         print(f"  SARIMA coefficient extraction failed: {e}")
-        coef_df = pd.DataFrame(columns=["parameter", "coefficient", "pvalue"])
+        coef_df = pd.DataFrame(columns=["parameter", "coefficient", "pvalue"])  # type: ignore[arg-type]
 
     coef_df.to_csv(output_dir / "sarima_coefficients.csv", index=False)
     print(f"  SARIMA coefficients saved")
@@ -463,7 +472,7 @@ def generate_combined_plots(output_dir: Path) -> None:
 
     for idx, model_name in enumerate(combined_df.columns):
         ax = axes[idx]
-        sorted_imp = combined_df[model_name].sort_values(ascending=True)
+        sorted_imp = combined_df[model_name].sort_values(ascending=True)  # type: ignore[call-overload]
         ax.barh(range(len(sorted_imp)), sorted_imp.values)
         ax.set_yticks(range(len(sorted_imp)))
         ax.set_yticklabels(sorted_imp.index, fontsize=8)
@@ -580,7 +589,7 @@ def main() -> None:
                 trainer, run_dir = create_trainer(cfg, model_name=f"importance_hmm_lstm")
                 trainer.fit(model, datamodule=dm)
 
-                best_ckpt = trainer.checkpoint_callback.best_model_path
+                best_ckpt = trainer.checkpoint_callback.best_model_path  # type: ignore[union-attr]
                 best_model = HMMLSTMForecaster.load_from_checkpoint(
                     best_ckpt, config=cfg, input_size=n_input,
                 )

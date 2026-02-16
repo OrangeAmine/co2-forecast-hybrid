@@ -66,6 +66,9 @@ class CO2DataModule(pl.LightningDataModule):
         # Store test dates for plotting
         self.test_dates: pd.DatetimeIndex | None = None
 
+        # Optional: split DataFrames for models that need raw data (e.g., HMM)
+        self._benchmark_splits: tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame] | None = None
+
     def setup(self, stage: str | None = None) -> None:
         """Load data, split, scale, and create sequences.
 
@@ -133,7 +136,7 @@ class CO2DataModule(pl.LightningDataModule):
 
         # Store test dates for plotting
         if datetime_col in test_df.columns:
-            self.test_dates = test_df[datetime_col]
+            self.test_dates = pd.DatetimeIndex(test_df[datetime_col])
 
         # Fit scalers on training data
         self.feature_scaler, self.target_scaler = fit_scalers(
@@ -197,10 +200,11 @@ class CO2DataModule(pl.LightningDataModule):
         """
         dm = cls(config)
 
-        dm.test_dates = test_df.get(
-            config["data"]["datetime_column"],
-            pd.Series(dtype="datetime64[ns]"),
-        )
+        datetime_col = config["data"]["datetime_column"]
+        if datetime_col in test_df.columns:
+            dm.test_dates = pd.DatetimeIndex(test_df[datetime_col])
+        else:
+            dm.test_dates = None
 
         feature_columns = dm.feature_columns
         target_column = dm.target_column
@@ -244,6 +248,7 @@ class CO2DataModule(pl.LightningDataModule):
         return dm
 
     def train_dataloader(self) -> DataLoader:
+        assert self.train_dataset is not None, "setup() must be called first"
         return DataLoader(
             self.train_dataset,
             batch_size=self.training_cfg["batch_size"],
@@ -254,6 +259,7 @@ class CO2DataModule(pl.LightningDataModule):
         )
 
     def val_dataloader(self) -> DataLoader:
+        assert self.val_dataset is not None, "setup() must be called first"
         return DataLoader(
             self.val_dataset,
             batch_size=self.training_cfg["batch_size"],
@@ -264,6 +270,7 @@ class CO2DataModule(pl.LightningDataModule):
         )
 
     def test_dataloader(self) -> DataLoader:
+        assert self.test_dataset is not None, "setup() must be called first"
         return DataLoader(
             self.test_dataset,
             batch_size=self.training_cfg["batch_size"],

@@ -204,6 +204,6 @@ class XGBoostForecaster:
 
         # MultiOutputRegressor.predict returns (n_samples, n_outputs)
         predictions = np.column_stack(
-            [est.predict(X_flat) for est in self.model_.estimators_]
+            [est.predict(X_flat) for est in self.model_.estimators_]  # type: ignore[union-attr]
         )
         return predictions

@@ -302,9 +302,12 @@ def benchmark_lstm(config: dict, datamodule: CO2DataModule) -> dict:
     trainer.test(model, datamodule=datamodule, ckpt_path="best")
 
     predictions = trainer.predict(model, datamodule.test_dataloader(), ckpt_path="best")
-    y_pred_scaled = torch.cat(predictions, dim=0).numpy()
+    assert predictions is not None
+    y_pred_scaled = torch.cat(predictions, dim=0).numpy()  # type: ignore[arg-type]
+    assert datamodule.test_dataset is not None
     y_true_scaled = datamodule.test_dataset.y.numpy()
 
+    assert datamodule.target_scaler is not None
     y_pred = inverse_scale_target(y_pred_scaled, datamodule.target_scaler)
     y_true = inverse_scale_target(y_true_scaled, datamodule.target_scaler)
 
@@ -340,9 +343,12 @@ def benchmark_cnn_lstm(config: dict, datamodule: CO2DataModule) -> dict:
     trainer.test(model, datamodule=datamodule, ckpt_path="best")
 
     predictions = trainer.predict(model, datamodule.test_dataloader(), ckpt_path="best")
-    y_pred_scaled = torch.cat(predictions, dim=0).numpy()
+    assert predictions is not None
+    y_pred_scaled = torch.cat(predictions, dim=0).numpy()  # type: ignore[arg-type]
+    assert datamodule.test_dataset is not None
     y_true_scaled = datamodule.test_dataset.y.numpy()
 
+    assert datamodule.target_scaler is not None
     y_pred = inverse_scale_target(y_pred_scaled, datamodule.target_scaler)
     y_true = inverse_scale_target(y_true_scaled, datamodule.target_scaler)
 
@@ -451,9 +457,12 @@ def benchmark_hmm_lstm(
     trainer.test(model, datamodule=dm, ckpt_path="best")
 
     predictions = trainer.predict(model, dm.test_dataloader(), ckpt_path="best")
-    y_pred_scaled = torch.cat(predictions, dim=0).numpy()
+    assert predictions is not None
+    y_pred_scaled = torch.cat(predictions, dim=0).numpy()  # type: ignore[arg-type]
+    assert dm.test_dataset is not None
     y_true_scaled = dm.test_dataset.y.numpy()
 
+    assert dm.target_scaler is not None
     y_pred = inverse_scale_target(y_pred_scaled, dm.target_scaler)
     y_true = inverse_scale_target(y_true_scaled, dm.target_scaler)
 
@@ -486,6 +495,8 @@ def benchmark_sarima(config: dict, datamodule: CO2DataModule) -> dict:
         "seasonal_order": [1, 0, 1, 24],
     }
 
+    assert datamodule.train_dataset is not None
+    assert datamodule.test_dataset is not None
     X_train = datamodule.train_dataset.X.numpy()
     y_train = datamodule.train_dataset.y.numpy()
     X_test = datamodule.test_dataset.X.numpy()
@@ -502,6 +513,7 @@ def benchmark_sarima(config: dict, datamodule: CO2DataModule) -> dict:
 
     y_pred_scaled = model.predict_batch(X_test, target_idx=target_idx)
 
+    assert datamodule.target_scaler is not None
     y_pred = inverse_scale_target(y_pred_scaled, datamodule.target_scaler)
     y_true = inverse_scale_target(y_test_scaled, datamodule.target_scaler)
 
@@ -535,6 +547,9 @@ def benchmark_xgboost(config: dict, datamodule: CO2DataModule) -> dict:
         "early_stopping_rounds": 20,
     }
 
+    assert datamodule.train_dataset is not None
+    assert datamodule.val_dataset is not None
+    assert datamodule.test_dataset is not None
     X_train = datamodule.train_dataset.X.numpy()
     y_train = datamodule.train_dataset.y.numpy()
     X_val = datamodule.val_dataset.X.numpy()
@@ -547,6 +562,7 @@ def benchmark_xgboost(config: dict, datamodule: CO2DataModule) -> dict:
 
     y_pred_scaled = model.predict(X_test)
 
+    assert datamodule.target_scaler is not None
     y_pred = inverse_scale_target(y_pred_scaled, datamodule.target_scaler)
     y_true = inverse_scale_target(y_test_scaled, datamodule.target_scaler)
 
@@ -577,6 +593,9 @@ def benchmark_catboost(config: dict, datamodule: CO2DataModule) -> dict:
         "early_stopping_rounds": 20,
     }
 
+    assert datamodule.train_dataset is not None
+    assert datamodule.val_dataset is not None
+    assert datamodule.test_dataset is not None
     X_train = datamodule.train_dataset.X.numpy()
     y_train = datamodule.train_dataset.y.numpy()
     X_val = datamodule.val_dataset.X.numpy()
@@ -589,6 +608,7 @@ def benchmark_catboost(config: dict, datamodule: CO2DataModule) -> dict:
 
     y_pred_scaled = model.predict(X_test)
 
+    assert datamodule.target_scaler is not None
     y_pred = inverse_scale_target(y_pred_scaled, datamodule.target_scaler)
     y_true = inverse_scale_target(y_test_scaled, datamodule.target_scaler)
 
@@ -722,6 +742,9 @@ def main() -> None:
     # Prepare shared DataModule for LSTM and CNN-LSTM
     print("\n[2/4] Preparing data pipeline...")
     datamodule = prepare_datamodule_from_df(df, config)
+    assert datamodule.train_dataset is not None
+    assert datamodule.val_dataset is not None
+    assert datamodule.test_dataset is not None
     print(f"  Train: {len(datamodule.train_dataset)} sequences")
     print(f"  Val:   {len(datamodule.val_dataset)} sequences")
     print(f"  Test:  {len(datamodule.test_dataset)} sequences")

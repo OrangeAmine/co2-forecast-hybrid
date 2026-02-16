@@ -141,9 +141,10 @@ def before_split(
     df = df.rename(columns=rename_map)
 
     # Step 8: Deterministic temporal features (pure functions of timestamp)
-    dt_naive = df.index.tz_localize(None) if df.index.tz is not None else df.index
-    hour = dt_naive.hour + dt_naive.minute / 60.0
-    day_of_year = dt_naive.dayofyear + hour / 24.0
+    dt_idx = pd.DatetimeIndex(df.index)
+    dt_naive = dt_idx.tz_localize(None) if dt_idx.tz is not None else dt_idx
+    hour = dt_naive.hour + dt_naive.minute / 60.0  # type: ignore[operator]
+    day_of_year = dt_naive.dayofyear + hour / 24.0  # type: ignore[operator]
 
     # 24h daily cycle
     df["Day_sin"] = np.sin(2 * np.pi * hour / 24.0)
@@ -153,7 +154,7 @@ def before_split(
     df["Year_cos"] = np.cos(2 * np.pi * day_of_year / 365.25)
 
     logger.info(f"  Added deterministic temporal features: Day_sin/cos, Year_sin/cos")
-    logger.info(f"  NaN rows preserved: {df.isna().any(axis=1).sum()}")
+    logger.info(f"  NaN rows preserved: {int(df.isna().any(axis=1).sum())}")  # type: ignore[union-attr]
 
     return df
 
@@ -307,7 +308,7 @@ def after_split_enhanced(
             day_of_week = dt.dt.dayofweek
         else:
             # Fallback if datetime is index
-            day_of_week = pd.to_datetime(df.index).dayofweek
+            day_of_week = pd.DatetimeIndex(df.index).dayofweek  # type: ignore[attr-defined]
         df["Weekday_sin"] = np.sin(2 * np.pi * day_of_week / 7.0)
         df["Weekday_cos"] = np.cos(2 * np.pi * day_of_week / 7.0)
 
@@ -448,7 +449,7 @@ def _log_nan_impact(split_name: str, df: pd.DataFrame, step_name: str) -> None:
         df: DataFrame to check.
         step_name: Name of the step for logging.
     """
-    n_nan_rows = df.isna().any(axis=1).sum()
+    n_nan_rows = int(df.isna().any(axis=1).sum())  # type: ignore[union-attr]
     n_clean = len(df) - n_nan_rows
     logger.info(f"  [{split_name}] After {step_name}: {n_nan_rows} rows with NaN, "
                 f"{n_clean} clean rows")

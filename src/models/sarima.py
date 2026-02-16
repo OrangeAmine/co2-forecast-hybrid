@@ -122,7 +122,7 @@ class SARIMAForecaster:
             )
             result = model.fit(disp=False, maxiter=200)
 
-        self.fitted_params_ = result.params
+        self.fitted_params_ = result.params  # type: ignore[union-attr]
         self.result_ = result  # Keep full result for diagnostics (coefficients, p-values, AIC, etc.)
         logger.info("SARIMA fitting complete.")
         return self

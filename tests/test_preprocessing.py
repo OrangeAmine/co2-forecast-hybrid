@@ -111,7 +111,7 @@ class TestInverseScaleTarget:
             sample_co2_df, base_feature_columns, "CO2", "standard"
         )
         original = sample_co2_df["CO2"].values
-        scaled = tgt_scaler.transform(original.reshape(-1, 1)).ravel()
+        scaled = np.asarray(tgt_scaler.transform(original.reshape(-1, 1))).ravel()
         recovered = inverse_scale_target(scaled, tgt_scaler)
         np.testing.assert_allclose(recovered.ravel(), original, rtol=1e-5)
 
@@ -123,9 +123,9 @@ class TestInverseScaleTarget:
         original = sample_co2_df["CO2"].values[:50].reshape(10, 5)
         scaled = np.zeros_like(original)
         for i in range(original.shape[1]):
-            scaled[:, i] = tgt_scaler.transform(
+            scaled[:, i] = np.asarray(tgt_scaler.transform(
                 original[:, i].reshape(-1, 1)
-            ).ravel()
+            )).ravel()
         recovered = inverse_scale_target(scaled, tgt_scaler)
         np.testing.assert_allclose(recovered, original, rtol=1e-5)
 
@@ -135,7 +135,7 @@ class TestInverseScaleTarget:
             sample_co2_df, base_feature_columns, "CO2", "robust"
         )
         original = sample_co2_df["CO2"].values
-        scaled = tgt_scaler.transform(original.reshape(-1, 1)).ravel()
+        scaled = np.asarray(tgt_scaler.transform(original.reshape(-1, 1))).ravel()
         recovered = inverse_scale_target(scaled, tgt_scaler)
         np.testing.assert_allclose(recovered.ravel(), original, rtol=1e-5)
 

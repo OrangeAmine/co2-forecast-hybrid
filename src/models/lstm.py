@@ -70,6 +70,7 @@ class LSTMForecaster(pl.LightningModule):
         if model_cfg.get("bidirectional", False):
             lstm_output_size *= 2
 
+        assert output_size is not None
         self.fc = nn.Linear(lstm_output_size, output_size)
         self.criterion = nn.MSELoss()
 
@@ -136,7 +137,7 @@ class LSTMForecaster(pl.LightningModule):
         x, _ = batch
         return self(x)
 
-    def configure_optimizers(self) -> dict:
+    def configure_optimizers(self) -> dict:  # type: ignore[override]
         """Configure Adam optimizer with optional warm-up + ReduceLROnPlateau.
 
         When warmup_epochs > 0, the LR linearly ramps from ~0 to
@@ -177,5 +178,7 @@ class LSTMForecaster(pl.LightningModule):
             # Linear ramp: epoch 0 → lr/warmup, epoch warmup-1 → lr
             scale = (self.current_epoch + 1) / warmup
             new_lr = self._target_lr * scale
-            for pg in self.optimizers().param_groups:
-                pg["lr"] = new_lr
+            optimizer = self.optimizers()
+            if not isinstance(optimizer, list):
+                for pg in optimizer.param_groups:
+                    pg["lr"] = new_lr

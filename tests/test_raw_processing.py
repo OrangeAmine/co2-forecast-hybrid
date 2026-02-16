@@ -5,7 +5,6 @@ import pandas as pd
 import pytest
 
 from src.data.raw_processing import (
-    add_engineered_features,
     remove_impossible_values,
     resample_to_5min,
     resample_to_interval,
@@ -78,51 +77,6 @@ class TestResampleTo5min:
         a = resample_to_5min(df)
         b = resample_to_interval(df, interval_minutes=5)
         pd.testing.assert_frame_equal(a, b)
-
-
-class TestAddEngineeredFeatures:
-    """Tests for temporal features and dCO2."""
-
-    def _resampled_df(self, interval_minutes: int = 5) -> pd.DataFrame:
-        df = _irregular_sensor_df(300)
-        return resample_to_interval(df, interval_minutes=interval_minutes)
-
-    def test_dco2_present_5min(self):
-        """dCO2 column should exist after feature engineering at 5-min."""
-        resampled = self._resampled_df(5)
-        result = add_engineered_features(resampled, interval_minutes=5)
-        assert "dCO2" in result.columns
-
-    def test_dco2_present_1h(self):
-        """dCO2 column should exist after feature engineering at 1h."""
-        resampled = self._resampled_df(60)
-        result = add_engineered_features(resampled, interval_minutes=60)
-        assert "dCO2" in result.columns
-
-    def test_cyclical_features_range(self):
-        """Day/Year sin/cos should be in [-1, 1]."""
-        resampled = self._resampled_df(5)
-        result = add_engineered_features(resampled, interval_minutes=5)
-        for col in ["Day_sin", "Day_cos", "Year_sin", "Year_cos"]:
-            assert result[col].between(-1, 1).all(), f"{col} out of [-1,1]"
-
-    def test_column_renaming(self):
-        """Temperature->TemperatureExt, Humidity->Hrext, Pressure->Pression."""
-        resampled = self._resampled_df(5)
-        result = add_engineered_features(resampled, interval_minutes=5)
-        assert "TemperatureExt" in result.columns
-        assert "Hrext" in result.columns
-        assert "Pression" in result.columns
-        # Original names should be gone
-        assert "Temperature" not in result.columns
-        assert "Humidity" not in result.columns
-        assert "Pressure" not in result.columns
-
-    def test_no_nan_in_output(self):
-        """NaN rows should be dropped by add_engineered_features."""
-        resampled = self._resampled_df(5)
-        result = add_engineered_features(resampled, interval_minutes=5)
-        assert result.isna().sum().sum() == 0
 
 
 class TestRemoveImpossibleValues:

@@ -159,8 +159,11 @@ def run_lstm(config: dict, dm: CO2DataModule, run_name: str) -> dict:
     trainer, run_dir = create_trainer(config, model_name=run_name)
     trainer.fit(model, datamodule=dm)
     predictions = trainer.predict(model, dm.test_dataloader(), ckpt_path="best")
-    y_pred_scaled = torch.cat(predictions, dim=0).numpy()
+    assert predictions is not None
+    y_pred_scaled = torch.cat(predictions, dim=0).numpy()  # type: ignore[arg-type]
+    assert dm.test_dataset is not None
     y_true_scaled = dm.test_dataset.y.numpy()
+    assert dm.target_scaler is not None
     y_pred = inverse_scale_target(y_pred_scaled, dm.target_scaler)
     y_true = inverse_scale_target(y_true_scaled, dm.target_scaler)
     return compute_metrics(y_true, y_pred)
@@ -172,8 +175,11 @@ def run_cnn_lstm(config: dict, dm: CO2DataModule, run_name: str) -> dict:
     trainer, run_dir = create_trainer(config, model_name=run_name)
     trainer.fit(model, datamodule=dm)
     predictions = trainer.predict(model, dm.test_dataloader(), ckpt_path="best")
-    y_pred_scaled = torch.cat(predictions, dim=0).numpy()
+    assert predictions is not None
+    y_pred_scaled = torch.cat(predictions, dim=0).numpy()  # type: ignore[arg-type]
+    assert dm.test_dataset is not None
     y_true_scaled = dm.test_dataset.y.numpy()
+    assert dm.target_scaler is not None
     y_pred = inverse_scale_target(y_pred_scaled, dm.target_scaler)
     y_true = inverse_scale_target(y_true_scaled, dm.target_scaler)
     return compute_metrics(y_true, y_pred)
@@ -224,8 +230,11 @@ def run_hmm_lstm(
     trainer.fit(model, datamodule=dm)
 
     predictions = trainer.predict(model, dm.test_dataloader(), ckpt_path="best")
-    y_pred_scaled = torch.cat(predictions, dim=0).numpy()
+    assert predictions is not None
+    y_pred_scaled = torch.cat(predictions, dim=0).numpy()  # type: ignore[arg-type]
+    assert dm.test_dataset is not None
     y_true_scaled = dm.test_dataset.y.numpy()
+    assert dm.target_scaler is not None
     y_pred = inverse_scale_target(y_pred_scaled, dm.target_scaler)
     y_true = inverse_scale_target(y_true_scaled, dm.target_scaler)
     return compute_metrics(y_true, y_pred)
@@ -318,7 +327,7 @@ def run_tft(
     trainer.fit(tft, train_dataloaders=train_dl, val_dataloaders=val_dl)
 
     # Predict with best checkpoint
-    best_ckpt = trainer.checkpoint_callback.best_model_path
+    best_ckpt = trainer.checkpoint_callback.best_model_path  # type: ignore[union-attr]
     best_tft = tft.__class__.load_from_checkpoint(best_ckpt)
     predictions = best_tft.predict(test_dl, mode="prediction", return_x=False)
     y_pred = torch.cat([p for p in predictions], dim=0).numpy()
@@ -333,6 +342,8 @@ def run_sarima(config: dict, dm: CO2DataModule, run_name: str) -> dict:
     """Train and evaluate SARIMA."""
     cfg = copy.deepcopy(config)
 
+    assert dm.train_dataset is not None
+    assert dm.test_dataset is not None
     X_train = dm.train_dataset.X.numpy()
     y_train = dm.train_dataset.y.numpy()
     X_test = dm.test_dataset.X.numpy()
@@ -348,6 +359,7 @@ def run_sarima(config: dict, dm: CO2DataModule, run_name: str) -> dict:
     model.fit(train_series)
     y_pred_scaled = model.predict_batch(X_test, target_idx=target_idx)
 
+    assert dm.target_scaler is not None
     y_pred = inverse_scale_target(y_pred_scaled, dm.target_scaler)
     y_true = inverse_scale_target(y_test_scaled, dm.target_scaler)
     return compute_metrics(y_true, y_pred)
@@ -355,6 +367,9 @@ def run_sarima(config: dict, dm: CO2DataModule, run_name: str) -> dict:
 
 def run_xgboost(config: dict, dm: CO2DataModule, run_name: str) -> dict:
     """Train and evaluate XGBoost."""
+    assert dm.train_dataset is not None
+    assert dm.val_dataset is not None
+    assert dm.test_dataset is not None
     X_train = dm.train_dataset.X.numpy()
     y_train = dm.train_dataset.y.numpy()
     X_val = dm.val_dataset.X.numpy()
@@ -366,6 +381,7 @@ def run_xgboost(config: dict, dm: CO2DataModule, run_name: str) -> dict:
     model.fit(X_train, y_train, X_val, y_val)
     y_pred_scaled = model.predict(X_test)
 
+    assert dm.target_scaler is not None
     y_pred = inverse_scale_target(y_pred_scaled, dm.target_scaler)
     y_true = inverse_scale_target(y_test_scaled, dm.target_scaler)
     return compute_metrics(y_true, y_pred)
@@ -373,6 +389,9 @@ def run_xgboost(config: dict, dm: CO2DataModule, run_name: str) -> dict:
 
 def run_catboost(config: dict, dm: CO2DataModule, run_name: str) -> dict:
     """Train and evaluate CatBoost."""
+    assert dm.train_dataset is not None
+    assert dm.val_dataset is not None
+    assert dm.test_dataset is not None
     X_train = dm.train_dataset.X.numpy()
     y_train = dm.train_dataset.y.numpy()
     X_val = dm.val_dataset.X.numpy()
@@ -384,6 +403,7 @@ def run_catboost(config: dict, dm: CO2DataModule, run_name: str) -> dict:
     model.fit(X_train, y_train, X_val, y_val)
     y_pred_scaled = model.predict(X_test)
 
+    assert dm.target_scaler is not None
     y_pred = inverse_scale_target(y_pred_scaled, dm.target_scaler)
     y_true = inverse_scale_target(y_test_scaled, dm.target_scaler)
     return compute_metrics(y_true, y_pred)
@@ -491,14 +511,14 @@ def select_best_variant(summary_df: pd.DataFrame) -> str:
         Name of the best variant.
     """
     median_rmse = summary_df.groupby("variant")["rmse"].median()
-    sorted_variants = median_rmse.sort_values()
+    sorted_variants = median_rmse.sort_values()  # type: ignore[call-overload]
 
     print("\n  Median RMSE by variant:")
     for variant, rmse in sorted_variants.items():
         print(f"    {variant}: {rmse:.2f} ppm")
 
-    best = sorted_variants.index[0]
-    second = sorted_variants.index[1] if len(sorted_variants) > 1 else None
+    best: str = str(sorted_variants.index[0])
+    second: str | None = str(sorted_variants.index[1]) if len(sorted_variants) > 1 else None
 
     # If top 2 are within 5%, prefer the simpler one
     if second is not None:
@@ -645,7 +665,7 @@ def main() -> None:
     # Select best variant
     valid_results = summary_df[summary_df["status"] == "OK"]
     if not valid_results.empty:
-        best = select_best_variant(valid_results)
+        best = select_best_variant(valid_results)  # type: ignore[arg-type]
 
         # Save best variant selection
         selection = {
@@ -657,7 +677,7 @@ def main() -> None:
             json.dump(selection, f, indent=2)
 
         # Generate comparison plot
-        generate_comparison_plot(valid_results, output_dir / "comparison_plot.png")
+        generate_comparison_plot(valid_results, output_dir / "comparison_plot.png")  # type: ignore[arg-type]
 
     print(f"\n{'='*70}")
     print("  PHASE 3 COMPLETE")

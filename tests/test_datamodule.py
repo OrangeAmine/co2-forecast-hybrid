@@ -28,6 +28,7 @@ class TestCO2DataModuleFromDataFrames:
         lookback = sample_config["data"]["lookback_hours"] * sample_config["data"]["samples_per_hour"]
         horizon = sample_config["data"]["forecast_horizon_hours"] * sample_config["data"]["samples_per_hour"]
 
+        assert dm.train_dataset is not None
         X, y = dm.train_dataset[0]
         assert X.shape == (lookback, n_features)
         assert y.shape == (horizon,)

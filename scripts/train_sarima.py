@@ -58,6 +58,9 @@ def train_single_horizon(config: dict) -> None:
     print(f"  Lookback: {config['data']['lookback_hours']}h "
           f"({datamodule.lookback_steps} steps)")
     print(f"  Horizon: {horizon}h ({datamodule.horizon_steps} steps)")
+    assert datamodule.train_dataset is not None
+    assert datamodule.val_dataset is not None
+    assert datamodule.test_dataset is not None
     print(f"  Train samples: {len(datamodule.train_dataset)}")
     print(f"  Val samples: {len(datamodule.val_dataset)}")
     print(f"  Test samples: {len(datamodule.test_dataset)}")
@@ -72,6 +75,8 @@ def train_single_horizon(config: dict) -> None:
     # SARIMA uses scaled data from the sliding windows (target is last col)
     # Extract training target series from the raw training split
     # to fit the SARIMA parameters, then predict on test windows.
+    assert datamodule.train_dataset is not None
+    assert datamodule.test_dataset is not None
     X_train = datamodule.train_dataset.X.numpy()
     y_train = datamodule.train_dataset.y.numpy()
     X_test = datamodule.test_dataset.X.numpy()
@@ -109,6 +114,7 @@ def train_single_horizon(config: dict) -> None:
     print(f"  Prediction completed in {pred_time:.1f}s")
 
     # Inverse scale
+    assert datamodule.target_scaler is not None
     y_pred = inverse_scale_target(y_pred_scaled, datamodule.target_scaler)
     y_true = inverse_scale_target(y_test_scaled, datamodule.target_scaler)
 

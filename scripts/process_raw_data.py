@@ -77,7 +77,7 @@ def process_variant(variant_name: str, raw_dir: Path) -> None:
     print(f"  {'='*60}")
     for name, df in [("Train", train_df), ("Val", val_df), ("Test", test_df)]:
         print(f"  {name:>5}: {len(df):>7} rows  |  "
-              f"NaN: {df.isna().any(axis=1).sum()}  |  "
+              f"NaN: {int(df.isna().any(axis=1).sum())}  |  "  # type: ignore[union-attr]
               f"Columns: {len(df.columns)}")
     print(f"  Columns: {train_df.columns.tolist()}")
     print(f"  {'='*60}\n")

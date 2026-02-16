@@ -114,6 +114,7 @@ class CNNLSTMForecaster(pl.LightningModule):
         fc_hidden = model_cfg["fc_hidden_size"]
         self.fc1 = nn.Linear(model_cfg["lstm_hidden_size"], fc_hidden)
         self.fc_dropout = nn.Dropout(model_cfg["lstm_dropout"])
+        assert output_size is not None
         self.fc2 = nn.Linear(fc_hidden, output_size)
 
         self.criterion = nn.MSELoss()
@@ -190,7 +191,7 @@ class CNNLSTMForecaster(pl.LightningModule):
         x, _ = batch
         return self(x)
 
-    def configure_optimizers(self) -> dict:
+    def configure_optimizers(self) -> dict:  # type: ignore[override]
         """Configure Adam optimizer with optional warm-up + ReduceLROnPlateau."""
         training_cfg = self.config["training"]
         self._warmup_epochs = training_cfg.get("warmup_epochs", 0)
@@ -221,5 +222,7 @@ class CNNLSTMForecaster(pl.LightningModule):
         if warmup > 0 and self.current_epoch < warmup:
             scale = (self.current_epoch + 1) / warmup
             new_lr = self._target_lr * scale
-            for pg in self.optimizers().param_groups:
-                pg["lr"] = new_lr
+            optimizer = self.optimizers()
+            if not isinstance(optimizer, list):
+                for pg in optimizer.param_groups:
+                    pg["lr"] = new_lr

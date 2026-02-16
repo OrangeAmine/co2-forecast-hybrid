@@ -164,8 +164,9 @@ def create_tft_datasets(
     val_end = train_end + int(n * data_cfg["val_ratio"])
 
     # Training dataset
+    train_mask: pd.Series = df["time_idx"] <= train_end  # type: ignore[assignment]
     training_data = TimeSeriesDataSet(
-        df[df.time_idx <= train_end],
+        df.loc[train_mask].reset_index(drop=True),
         time_idx="time_idx",
         target=model_cfg["target"],
         group_ids=model_cfg["group_ids"],
@@ -179,16 +180,18 @@ def create_tft_datasets(
     )
 
     # Validation dataset (shares encoders/scalers with training)
+    val_mask: pd.Series = (df["time_idx"] > train_end) & (df["time_idx"] <= val_end)  # type: ignore[assignment]
     validation_data = TimeSeriesDataSet.from_dataset(
         training_data,
-        df[(df.time_idx > train_end) & (df.time_idx <= val_end)],
+        df.loc[val_mask].reset_index(drop=True),
         stop_randomization=True,
     )
 
     # Test dataset
+    test_mask: pd.Series = df["time_idx"] > val_end  # type: ignore[assignment]
     test_data = TimeSeriesDataSet.from_dataset(
         training_data,
-        df[df.time_idx > val_end],
+        df.loc[test_mask].reset_index(drop=True),
         stop_randomization=True,
     )
 
@@ -226,7 +229,7 @@ def build_tft_model(
     # before the LR is reduced. This is separate from early stopping patience.
     scheduler_patience = training_cfg.get("scheduler_patience", 5)
 
-    tft = TemporalFusionTransformer.from_dataset(
+    tft: TemporalFusionTransformer = TemporalFusionTransformer.from_dataset(  # type: ignore[assignment]
         training_dataset,
         hidden_size=model_cfg["hidden_size"],
         attention_head_size=model_cfg["attention_head_size"],

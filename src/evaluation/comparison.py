@@ -81,9 +81,9 @@ def compare_models(
     output_dir.mkdir(parents=True, exist_ok=True)
 
     # Build comparison table
-    rows = []
+    rows: list[dict[str, str | float]] = []
     for model_name, metrics in results.items():
-        row = {"Model": model_name}
+        row: dict[str, str | float] = {"Model": model_name}
         row.update(metrics)
         rows.append(row)
 
@@ -180,11 +180,11 @@ def compare_experiments(
     output_dir.mkdir(parents=True, exist_ok=True)
 
     # Build a table: rows = (experiment, base_model), cols = metrics
-    rows = []
+    rows: list[dict[str, str | float]] = []
     for exp_name, models in all_results.items():
         for model_name, metrics in models.items():
             _, base_model, _ = parse_model_name(model_name)
-            row = {
+            row: dict[str, str | float] = {
                 "Experiment": exp_name,
                 "Model": base_model,
                 "FullName": model_name,
@@ -231,7 +231,7 @@ def compare_experiments(
                 match = exp_data[exp_data["Model"] == model]
                 # Use NaN for missing model-experiment combinations so
                 # matplotlib skips them instead of plotting a misleading zero bar.
-                values.append(match[metric].values[0] if len(match) > 0 else np.nan)
+                values.append(float(match[metric].iloc[0]) if len(match) > 0 else np.nan)  # type: ignore[union-attr]
 
             offset = (i - len(experiments) / 2 + 0.5) * width
             bars = ax.bar(x + offset, values, width,
@@ -268,9 +268,9 @@ def compare_experiments(
                 if metric not in model_rows.columns:
                     continue
                 if metric == "r2":
-                    best_idx = model_rows[metric].idxmax()
+                    best_idx = model_rows[metric].idxmax()  # type: ignore[union-attr]
                 else:
-                    best_idx = model_rows[metric].idxmin()
+                    best_idx = model_rows[metric].idxmin()  # type: ignore[union-attr]
                 best_row = model_rows.loc[best_idx]
                 f.write(f"  Best {metric.upper()}: {best_row['Experiment']} "
                         f"({best_row[metric]:.4f})\n")

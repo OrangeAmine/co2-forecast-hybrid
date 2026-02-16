@@ -38,8 +38,8 @@ def _make_co2_df(n_rows: int, freq: str) -> pd.DataFrame:
     temp_ext = 20 + 5 * np.sin(2 * np.pi * np.arange(n_rows) / n_rows) + rng.normal(0, 1, n_rows)
     hr_ext = 50 + 10 * rng.random(n_rows)
 
-    hour = dates.hour + dates.minute / 60.0
-    day_of_year = dates.dayofyear + hour / 24.0
+    hour = dates.hour + dates.minute / 60.0  # type: ignore[operator]
+    day_of_year = dates.dayofyear + hour / 24.0  # type: ignore[operator]
 
     df = pd.DataFrame({
         "datetime": dates,

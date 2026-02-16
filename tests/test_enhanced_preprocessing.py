@@ -150,7 +150,7 @@ class TestOutlierDetection:
     def test_clipping_works(self):
         """Values outside bounds should be clipped."""
         df = pd.DataFrame({"CO2": [100, 200, 300, 400, 10000]})
-        bounds = {"CO2": (150, 500)}
+        bounds: dict[str, tuple[float, float]] = {"CO2": (150.0, 500.0)}
         result = _clip_outliers(df, bounds)
         assert result["CO2"].min() >= 150
         assert result["CO2"].max() <= 500
