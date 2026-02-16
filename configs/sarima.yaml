@@ -1,0 +1,17 @@
+model:
+  name: "SARIMA"
+  # SARIMA(p, d, q) x (P, D, Q, s)
+  # p=1: one autoregressive lag
+  # d=1: first-order differencing for stationarity
+  # q=1: one moving average term
+  order: [1, 1, 1]
+  # P=1: one seasonal AR lag
+  # D=1: one seasonal differencing
+  # Q=1: one seasonal MA term
+  # s=288: seasonal period = 1 day at 5-min resolution (288 steps)
+  seasonal_order: [1, 1, 1, 288]
+
+training:
+  batch_size: 64
+  max_epochs: 1  # not used directly by SARIMA, kept for config consistency
+  patience: 15

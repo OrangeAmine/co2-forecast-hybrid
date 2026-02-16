@@ -1,0 +1,21 @@
+experiment:
+  name: "preproc_A"
+  label: "Simple (5-min)"
+  description: "Minimal preprocessing, 5-min resolution, no denoising/lags"
+
+data:
+  interval_minutes: 5
+  pipeline_variant: "simple"
+  max_interp_gap_minutes: 60
+  samples_per_hour: 12
+  scaler_type: "standard"
+  feature_columns:
+    - "Noise"
+    - "Pression"
+    - "TemperatureExt"
+    - "Hrext"
+    - "Day_sin"
+    - "Day_cos"
+    - "Year_sin"
+    - "Year_cos"
+    - "dCO2"

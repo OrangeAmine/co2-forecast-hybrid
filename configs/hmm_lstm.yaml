@@ -1,0 +1,30 @@
+model:
+  name: "HMM-LSTM"
+  # HMM config
+  hmm_n_states: 3
+  hmm_covariance_type: "full"
+  hmm_n_iter: 100
+  hmm_features:
+    - "CO2"
+    - "Noise"
+    - "TemperatureExt"
+  hmm_append_mode: "probabilities"  # "states" or "probabilities"
+
+  # LSTM block (input_size computed dynamically: original features + hmm states)
+  lstm_hidden_size: 128
+  lstm_num_layers: 2
+  lstm_dropout: 0.2
+
+  # FC head
+  fc_hidden_size: 64
+
+training:
+  learning_rate: 0.001
+  weight_decay: 0.0001
+  batch_size: 64
+  max_epochs: 50
+  patience: 15
+  scheduler: "reduce_on_plateau"
+  scheduler_patience: 5
+  scheduler_factor: 0.5
+  gradient_clip_val: 1.0

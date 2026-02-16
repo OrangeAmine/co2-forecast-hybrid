@@ -1,0 +1,22 @@
+training:
+  seed: 42
+  accelerator: "gpu"        # enforce GPU usage
+  devices: 1
+  precision: 32
+  num_workers: 4
+  pin_memory: true
+  results_dir: "results"
+  log_every_n_steps: 10
+  enable_progress_bar: true
+
+  # Gradient clipping (default for all models; model configs can override)
+  gradient_clip_val: 1.0
+
+  # LR scheduler defaults (model configs can override)
+  scheduler: "reduce_on_plateau"
+  scheduler_patience: 5
+  scheduler_factor: 0.5
+
+  # LR warm-up: linearly ramp LR from 0 to learning_rate over this many epochs.
+  # Set to 0 to disable. Recommended for large horizons (e.g., 24h = 288 steps).
+  warmup_epochs: 0

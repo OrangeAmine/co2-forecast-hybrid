@@ -1,0 +1,26 @@
+model:
+  name: "CNN-LSTM"
+  # CNN block
+  cnn_channels: [32, 64]
+  cnn_kernel_sizes: [7, 5]
+  cnn_pool_size: 2
+  cnn_dropout: 0.1
+
+  # LSTM block
+  lstm_hidden_size: 128
+  lstm_num_layers: 2
+  lstm_dropout: 0.2
+
+  # FC head
+  fc_hidden_size: 64
+
+training:
+  learning_rate: 0.001
+  weight_decay: 0.0001
+  batch_size: 64
+  max_epochs: 50
+  patience: 15
+  scheduler: "reduce_on_plateau"
+  scheduler_patience: 5
+  scheduler_factor: 0.5
+  gradient_clip_val: 1.0

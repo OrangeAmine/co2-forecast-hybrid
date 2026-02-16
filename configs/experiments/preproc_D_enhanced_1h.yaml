@@ -1,0 +1,43 @@
+experiment:
+  name: "preproc_D"
+  label: "Enhanced (1h)"
+  description: "Denoised, outlier-clipped, with lags/rolling/weekday features, 1h"
+
+data:
+  interval_minutes: 60
+  pipeline_variant: "enhanced"
+  max_interp_gap_minutes: 60
+  samples_per_hour: 1
+  scaler_type: "robust"
+  feature_columns:
+    - "Noise"
+    - "Pression"
+    - "TemperatureExt"
+    - "Hrext"
+    - "Day_sin"
+    - "Day_cos"
+    - "Year_sin"
+    - "Year_cos"
+    - "dCO2"
+    - "Weekday_sin"
+    - "Weekday_cos"
+    - "CO2_lag_1"
+    - "CO2_lag_6"
+    - "CO2_lag_24"
+    - "CO2_rolling_mean_3"
+    - "CO2_rolling_std_3"
+    - "CO2_rolling_mean_6"
+    - "CO2_rolling_std_6"
+
+preprocessing:
+  denoising:
+    method: "savgol"
+    window_length: 5
+    polyorder: 2
+    mode: "nearest"
+  outlier_detection:
+    method: "iqr"
+    multiplier: 3.0
+    columns: ["CO2", "TemperatureExt", "Hrext", "Noise", "Pression"]
+  lag_steps: [1, 6, 24]
+  rolling_windows: [3, 6]

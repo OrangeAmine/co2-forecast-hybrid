@@ -1,0 +1,21 @@
+experiment:
+  name: "preproc_B"
+  label: "Simple (1h)"
+  description: "Minimal preprocessing, 1h resolution, no denoising/lags"
+
+data:
+  interval_minutes: 60
+  pipeline_variant: "simple"
+  max_interp_gap_minutes: 60
+  samples_per_hour: 1
+  scaler_type: "standard"
+  feature_columns:
+    - "Noise"
+    - "Pression"
+    - "TemperatureExt"
+    - "Hrext"
+    - "Day_sin"
+    - "Day_cos"
+    - "Year_sin"
+    - "Year_cos"
+    - "dCO2"

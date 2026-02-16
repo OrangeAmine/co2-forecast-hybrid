@@ -1,0 +1,37 @@
+model:
+  name: "TFT"
+  hidden_size: 64
+  attention_head_size: 4
+  dropout: 0.1
+  hidden_continuous_size: 32
+  loss: "mse"
+
+  # pytorch-forecasting specific
+  time_varying_known_reals:
+    - "Day_sin"
+    - "Day_cos"
+    - "Year_cos"
+    - "Year_sin"
+  time_varying_unknown_reals:
+    - "CO2"
+    - "Noise"
+    - "Pression"
+    - "TemperatureExt"
+    - "Hrext"
+    - "dCO2"
+  time_idx: "time_idx"
+  group_ids: ["group"]
+  target: "CO2"
+
+training:
+  learning_rate: 0.001
+  batch_size: 64
+  max_epochs: 50
+  patience: 15
+  # TFT uses tighter gradient clipping (0.1 vs 1.0 default) because the
+  # multi-head attention + GRN architecture can produce large gradient spikes,
+  # especially early in training when attention weights are unstable.
+  gradient_clip_val: 0.1
+  # Explicit scheduler patience (not derived from early stopping patience)
+  scheduler_patience: 5
+  scheduler_factor: 0.5

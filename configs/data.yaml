@@ -1,0 +1,44 @@
+data:
+  processed_csv: "data/processed/BM2021_22_5min.csv"
+  target_column: "CO2"
+  feature_columns:
+    - "Noise"
+    - "Pression"
+    - "TemperatureExt"
+    - "Hrext"
+    - "Day_sin"
+    - "Day_cos"
+    - "Year_cos"
+    - "Year_sin"
+    - "dCO2"
+  datetime_column: "datetime"
+
+  # Chronological split ratios
+  train_ratio: 0.70
+  val_ratio: 0.15
+  test_ratio: 0.15
+
+  # Scaling
+  scaler_type: "standard"  # "standard" or "minmax"
+
+  # Sequence parameters (specified in hours, converted to steps internally)
+  # With 5-min data: 1 hour = 12 steps
+  lookback_hours: 24        # 1 day = 288 steps at 5-min
+  forecast_horizon_hours: 1 # 1 hour = 12 steps at 5-min
+  stride: 1
+  samples_per_hour: 12      # 5-min resolution
+
+  # Raw data settings
+  raw_dir: "data/raw"
+  raw_output: "data/processed/BM2021_22_5min.csv"
+
+  # Valid sensor ranges for impossible value removal
+  valid_ranges:
+    CO2: [300, 5000]
+    Temperature: [-20, 50]
+    Humidity: [0, 100]
+    Noise: [30, 120]
+    Pressure: [900, 1100]
+
+  # Gap filling
+  max_ffill_minutes: 30     # forward-fill gaps up to 30 minutes
