@@ -60,6 +60,40 @@ VARIANT_CONFIGS = {
     "preproc_D": "configs/experiments/preproc_D_enhanced_1h.yaml",
 }
 
+SUMMARY_CSV = Path("results/preprocessing_comparison/summary.csv")
+
+
+def _load_completed_runs(summary_path: Path) -> set[tuple[str, str, int]]:
+    """Load (variant, model, horizon) keys that already finished successfully.
+
+    Args:
+        summary_path: Path to summary.csv from a previous (possibly interrupted) run.
+
+    Returns:
+        Set of (variant, model, horizon) tuples with status == "OK".
+    """
+    if not summary_path.exists():
+        return set()
+    try:
+        df = pd.read_csv(summary_path)
+        ok = df[df["status"] == "OK"]
+        return set(zip(ok["variant"], ok["model"], ok["horizon"]))
+    except Exception:
+        return set()
+
+
+def _append_result_row(summary_path: Path, row: dict) -> None:
+    """Append a single result row to summary.csv (creates file if needed).
+
+    Args:
+        summary_path: Path to summary.csv.
+        row: Dict with column names → values.
+    """
+    summary_path.parent.mkdir(parents=True, exist_ok=True)
+    write_header = not summary_path.exists()
+    row_df = pd.DataFrame([row])
+    row_df.to_csv(summary_path, mode="a", header=write_header, index=False)
+
 ALL_MODELS = ["lstm", "cnn_lstm", "hmm_lstm", "tft", "sarima", "xgboost", "catboost"]
 
 # Model config YAML files
@@ -509,15 +543,21 @@ def main() -> None:
     args = parser.parse_args()
 
     total_runs = len(args.variants) * len(args.horizons) * len(args.models)
+
+    # Resume support: load already-completed runs from previous (interrupted) execution
+    completed = _load_completed_runs(SUMMARY_CSV)
+    skipped = 0
+
     print(f"\n{'='*70}")
     print(f"  PHASE 3: PREPROCESSING COMPARISON")
     print(f"  Variants: {args.variants}")
     print(f"  Models: {args.models}")
     print(f"  Horizons: {args.horizons}")
     print(f"  Total runs: {total_runs}")
+    if completed:
+        print(f"  Resuming: {len(completed)} runs already completed — will skip them")
     print(f"{'='*70}\n")
 
-    results = []
     run_count = 0
 
     for variant in args.variants:
@@ -525,6 +565,12 @@ def main() -> None:
             for model_name in args.models:
                 run_count += 1
                 label = f"[{run_count}/{total_runs}]"
+
+                # Skip runs that already succeeded in a previous execution
+                if (variant, model_name, horizon) in completed:
+                    skipped += 1
+                    print(f"  {label} {variant} | {model_name} | h={horizon} — SKIPPED (already done)")
+                    continue
 
                 print(f"\n{'─'*60}")
                 print(f"  {label} {variant} | {model_name} | h={horizon}")
@@ -540,7 +586,7 @@ def main() -> None:
                     )
                     elapsed = time.time() - t0
 
-                    results.append({
+                    row = {
                         "variant": variant,
                         "model": model_name,
                         "horizon": horizon,
@@ -550,14 +596,14 @@ def main() -> None:
                         "mape": metrics["mape"],
                         "elapsed_s": elapsed,
                         "status": "OK",
-                    })
+                    }
                     print(f"  RMSE={metrics['rmse']:.2f}  MAE={metrics['mae']:.2f}  "
                           f"R2={metrics['r2']:.4f}  ({elapsed:.1f}s)")
 
                 except Exception as e:
                     elapsed = time.time() - t0
                     print(f"  FAILED: {e} ({elapsed:.1f}s)")
-                    results.append({
+                    row = {
                         "variant": variant,
                         "model": model_name,
                         "horizon": horizon,
@@ -567,16 +613,19 @@ def main() -> None:
                         "mape": float("nan"),
                         "elapsed_s": elapsed,
                         "status": str(e),
-                    })
+                    }
 
-    # Save results
+                # Write each result immediately so progress survives interruptions
+                _append_result_row(SUMMARY_CSV, row)
+
+    # Reload full results from disk (previous + current runs combined)
     output_dir = Path("results/preprocessing_comparison")
-    output_dir.mkdir(parents=True, exist_ok=True)
-
-    summary_df = pd.DataFrame(results)
     summary_path = output_dir / "summary.csv"
-    summary_df.to_csv(summary_path, index=False)
-    print(f"\n  Results saved to: {summary_path}")
+    summary_df = pd.read_csv(summary_path)
+
+    if skipped:
+        print(f"\n  Skipped {skipped} already-completed runs")
+    print(f"  All results in: {summary_path}")
 
     # Print results table
     print(f"\n{'='*70}")
