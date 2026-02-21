@@ -1,0 +1,58 @@
+experiment:
+  name: "preproc_F"
+  label: "Wavelet + Occupancy (1h)"
+  description: "Wavelet denoising with occupancy proxies, 1h resolution"
+
+data:
+  interval_minutes: 60
+  pipeline_variant: "enhanced"
+  max_interp_gap_minutes: 60
+  samples_per_hour: 1
+  scaler_type: "robust"
+  feature_columns:
+    # --- Sensor features ---
+    - "Noise"
+    - "Pression"
+    - "TemperatureExt"
+    - "Hrext"
+    # --- Deterministic temporal features ---
+    - "Day_sin"
+    - "Day_cos"
+    - "Year_sin"
+    - "Year_cos"
+    # --- CO2 dynamics ---
+    - "dCO2"
+    # --- Weekday encoding ---
+    - "Weekday_sin"
+    - "Weekday_cos"
+    # --- Lag features ---
+    - "CO2_lag_1"
+    - "CO2_lag_6"
+    - "CO2_lag_24"
+    # --- Rolling statistics ---
+    - "CO2_rolling_mean_3"
+    - "CO2_rolling_std_3"
+    - "CO2_rolling_mean_6"
+    - "CO2_rolling_std_6"
+    # --- Occupancy proxy features ---
+    - "occupancy_binary"
+    - "hour_weekday_sin"
+    - "hour_weekday_cos"
+    - "CO2_deviation_from_baseline"
+
+preprocessing:
+  denoising:
+    method: "wavelet"
+    wavelet: "db4"
+    level: 3
+    threshold_mode: "soft"
+  outlier_detection:
+    multiplier: 3.0
+    columns: ["CO2", "TemperatureExt", "Hrext", "Noise", "Pression"]
+  lag_steps: [1, 6, 24]
+  rolling_windows: [3, 6]
+  occupancy_features:
+    enabled: true
+    dco2_threshold_ppm_per_hour: 5.0
+    min_sustained_steps: 3
+    baseline_percentile: 10

@@ -3,7 +3,7 @@ training:
   accelerator: "gpu"        # enforce GPU usage
   devices: 1
   precision: 32
-  num_workers: 4
+  num_workers: 0
   pin_memory: true
   results_dir: "results"
   log_every_n_steps: 10

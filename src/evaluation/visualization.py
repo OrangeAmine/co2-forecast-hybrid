@@ -180,3 +180,55 @@ def plot_training_curves(
 
     except Exception as e:
         print(f"  Could not plot training curves: {e}")
+
+
+def plot_predictions_with_intervals(
+    y_true: np.ndarray,
+    y_pred: np.ndarray,
+    lower: np.ndarray,
+    upper: np.ndarray,
+    model_name: str,
+    output_path: Path,
+    coverage: float = 0.9,
+    n_points: int = 200,
+) -> None:
+    """Plot predictions with conformal prediction intervals.
+
+    Shows point predictions with shaded confidence bands and ground truth.
+    Uses the first forecast step (h=1) for the time-series view.
+
+    Args:
+        y_true: (n_samples, horizon) ground truth.
+        y_pred: (n_samples, horizon) point predictions.
+        lower: (n_samples, horizon) lower bounds.
+        upper: (n_samples, horizon) upper bounds.
+        model_name: Model name for the title.
+        output_path: Path to save the plot.
+        coverage: Target coverage level for the title.
+        n_points: Max number of points to display.
+    """
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+
+    # Use first forecast step for visualization
+    y_t = y_true[:n_points, 0]
+    y_p = y_pred[:n_points, 0]
+    lo = lower[:n_points, 0]
+    hi = upper[:n_points, 0]
+    x = np.arange(len(y_t))
+
+    fig, ax = plt.subplots(figsize=(14, 5))
+
+    # Confidence band
+    ax.fill_between(x, lo, hi, alpha=0.25, color="#FF9800",
+                    label=f"{coverage*100:.0f}% prediction interval")
+
+    ax.plot(x, y_t, label="Actual", color="#2196F3", linewidth=1.0, alpha=0.8)
+    ax.plot(x, y_p, label="Predicted", color="#FF5722", linewidth=1.0, alpha=0.8)
+
+    ax.set_xlabel("Sample Index")
+    ax.set_ylabel("CO2 (ppm)")
+    ax.set_title(f"{model_name} - Predictions with {coverage*100:.0f}% Conformal Intervals")
+    ax.legend()
+    plt.tight_layout()
+    plt.savefig(output_path, dpi=150, bbox_inches="tight")
+    plt.close(fig)

@@ -1,0 +1,7 @@
+optuna:
+  n_trials: 100
+  timeout: 7200         # 2 hours max; set to null for unlimited
+  pruner: "median"
+  n_startup_trials: 5   # Complete this many trials before pruning begins
+  n_warmup_steps: 10    # Don't prune within the first N epochs of a trial
+  storage: null          # In-memory; set to "sqlite:///optuna.db" for persistence

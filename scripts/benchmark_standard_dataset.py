@@ -22,13 +22,13 @@ weekly component (15 ppm amplitude) that is invisible to the 24h
 lookback window, plus irreducible Gaussian noise (std=5).
 
 Models benchmarked:
-    - LSTM, CNN-LSTM, HMM-LSTM (deep learning)
+    - LSTM, CNN-LSTM, HMM-LSTM, Seq2Seq (deep learning)
     - SARIMA (statistical baseline, univariate)
     - XGBoost, CatBoost (gradient boosting)
 
 Usage:
     python scripts/benchmark_standard_dataset.py
-    python scripts/benchmark_standard_dataset.py --models lstm cnn_lstm hmm_lstm sarima xgboost catboost
+    python scripts/benchmark_standard_dataset.py --models lstm cnn_lstm hmm_lstm seq2seq sarima xgboost catboost
     python scripts/benchmark_standard_dataset.py --epochs 30
 """
 
@@ -52,6 +52,7 @@ from src.evaluation.metrics import compute_metrics
 from src.models.lstm import LSTMForecaster
 from src.models.cnn_lstm import CNNLSTMForecaster
 from src.models.hmm_lstm import HMMRegimeDetector, HMMLSTMForecaster
+from src.models.seq2seq import Seq2SeqForecaster
 from src.models.sarima import SARIMAForecaster
 from src.models.xgboost_model import XGBoostForecaster
 from src.models.catboost_model import CatBoostForecaster
@@ -339,6 +340,46 @@ def benchmark_cnn_lstm(config: dict, datamodule: CO2DataModule) -> dict:
 
     model = CNNLSTMForecaster(cfg)
     trainer, run_dir = create_trainer(cfg, model_name="bench_CNN-LSTM")
+    trainer.fit(model, datamodule=datamodule)
+    trainer.test(model, datamodule=datamodule, ckpt_path="best")
+
+    predictions = trainer.predict(model, datamodule.test_dataloader(), ckpt_path="best")
+    assert predictions is not None
+    y_pred_scaled = torch.cat(predictions, dim=0).numpy()  # type: ignore[arg-type]
+    assert datamodule.test_dataset is not None
+    y_true_scaled = datamodule.test_dataset.y.numpy()
+
+    assert datamodule.target_scaler is not None
+    y_pred = inverse_scale_target(y_pred_scaled, datamodule.target_scaler)
+    y_true = inverse_scale_target(y_true_scaled, datamodule.target_scaler)
+
+    return compute_metrics(y_true, y_pred)
+
+
+def benchmark_seq2seq(config: dict, datamodule: CO2DataModule) -> dict:
+    """Train and evaluate the Seq2Seq encoder-decoder on synthetic data.
+
+    Args:
+        config: Configuration dictionary.
+        datamodule: Prepared CO2DataModule.
+
+    Returns:
+        Dictionary of test metrics.
+    """
+    cfg = copy.deepcopy(config)
+    cfg["model"] = {
+        "name": "Seq2Seq",
+        "encoder_hidden_size": 128,
+        "encoder_num_layers": 2,
+        "encoder_dropout": 0.2,
+        "decoder_hidden_size": 128,
+        "decoder_dropout": 0.1,
+        "teacher_forcing_ratio": 0.5,
+        "teacher_forcing_anneal": True,
+    }
+
+    model = Seq2SeqForecaster(cfg)
+    trainer, run_dir = create_trainer(cfg, model_name="bench_Seq2Seq")
     trainer.fit(model, datamodule=datamodule)
     trainer.test(model, datamodule=datamodule, ckpt_path="best")
 
@@ -714,9 +755,9 @@ def main() -> None:
     )
     parser.add_argument(
         "--models", nargs="+",
-        default=["lstm", "cnn_lstm", "hmm_lstm", "sarima", "xgboost", "catboost"],
-        choices=["lstm", "cnn_lstm", "hmm_lstm", "sarima", "xgboost", "catboost"],
-        help="Models to benchmark (default: all six)"
+        default=["lstm", "cnn_lstm", "hmm_lstm", "seq2seq", "sarima", "xgboost", "catboost"],
+        choices=["lstm", "cnn_lstm", "hmm_lstm", "seq2seq", "sarima", "xgboost", "catboost"],
+        help="Models to benchmark (default: all seven)"
     )
     parser.add_argument(
         "--epochs", type=int, default=25,
@@ -780,6 +821,15 @@ def main() -> None:
         all_results["HMM-LSTM"] = benchmark_hmm_lstm(config, df)
         elapsed = time.time() - t0
         print(f"  HMM-LSTM completed in {elapsed:.1f}s")
+
+    if "seq2seq" in args.models:
+        print(f"\n{'─'*60}")
+        print(f"  Benchmarking: Seq2Seq")
+        print(f"{'─'*60}")
+        t0 = time.time()
+        all_results["Seq2Seq"] = benchmark_seq2seq(config, datamodule)
+        elapsed = time.time() - t0
+        print(f"  Seq2Seq completed in {elapsed:.1f}s")
 
     if "sarima" in args.models:
         print(f"\n{'─'*60}")

@@ -1,0 +1,24 @@
+model:
+  name: "Seq2Seq"
+  # Encoder: processes lookback window
+  encoder_hidden_size: 128
+  encoder_num_layers: 2
+  encoder_dropout: 0.2
+  # Decoder: generates predictions one step at a time with attention
+  decoder_hidden_size: 128
+  decoder_dropout: 0.1
+  # Training strategy
+  teacher_forcing_ratio: 0.5
+  teacher_forcing_anneal: true  # Linearly decay TF ratio to 0 over first 50% of epochs
+
+training:
+  learning_rate: 0.001
+  weight_decay: 0.0001
+  batch_size: 64
+  max_epochs: 100
+  patience: 20
+  warmup_epochs: 5
+  scheduler: "reduce_on_plateau"
+  scheduler_patience: 7
+  scheduler_factor: 0.5
+  gradient_clip_val: 1.0

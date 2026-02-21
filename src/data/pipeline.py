@@ -263,14 +263,20 @@ def after_split_enhanced(
         splits[name] = df
 
     # Step 11: Denoise CO2 per split
+    denoise_method = denoise_cfg.get("method", "savgol")
     window_length = denoise_cfg.get("window_length", 11 if interval_minutes <= 5 else 5)
     polyorder = denoise_cfg.get("polyorder", 3 if interval_minutes <= 5 else 2)
     mode = denoise_cfg.get("mode", "nearest")
+    wavelet_name = denoise_cfg.get("wavelet", "db4")
+    wavelet_level = denoise_cfg.get("level", 3)
+    wavelet_threshold = denoise_cfg.get("threshold_mode", "soft")
 
     for name in splits:
         splits[name] = _denoise_co2(
-            splits[name], window_length=window_length,
-            polyorder=polyorder, mode=mode,
+            splits[name], method=denoise_method,
+            window_length=window_length, polyorder=polyorder, mode=mode,
+            wavelet=wavelet_name, wavelet_level=wavelet_level,
+            wavelet_threshold=wavelet_threshold,
         )
 
     # Step 12: Outlier detection — fit on train, clip all
@@ -283,6 +289,12 @@ def after_split_enhanced(
         splits[name] = _clip_outliers(splits[name], bounds)
 
     # Steps 13-15: dCO2, lags, rolling, weekday per split, then drop NaN
+    # Process train first so we can extract the hourly CO2 baseline for
+    # occupancy features (fit on train only, applied to val/test).
+    occupancy_cfg = config.get("occupancy_features", {})
+    occupancy_enabled = occupancy_cfg.get("enabled", False)
+    hourly_baseline: pd.Series | None = None
+
     results = []
     for name in ["train", "val", "test"]:
         df = splits[name]
@@ -311,6 +323,16 @@ def after_split_enhanced(
             day_of_week = pd.DatetimeIndex(df.index).dayofweek  # type: ignore[attr-defined]
         df["Weekday_sin"] = np.sin(2 * np.pi * day_of_week / 7.0)
         df["Weekday_cos"] = np.cos(2 * np.pi * day_of_week / 7.0)
+
+        # Step 14d: Occupancy proxy features (gated by config)
+        if occupancy_enabled:
+            df, hourly_baseline = _compute_occupancy_features(
+                df,
+                interval_minutes=interval_minutes,
+                config=occupancy_cfg,
+                train_baseline=hourly_baseline,
+                is_train=(name == "train"),
+            )
 
         # Step 15: Drop NaN rows from lags/rolling/dCO2
         _log_nan_impact(name, df, "lags/rolling/dCO2")
@@ -357,22 +379,37 @@ def _interpolate_gaps(
 
 def _denoise_co2(
     df: pd.DataFrame,
+    method: str = "savgol",
     window_length: int = 11,
     polyorder: int = 3,
     mode: str = "nearest",
+    wavelet: str = "db4",
+    wavelet_level: int = 3,
+    wavelet_threshold: str = "soft",
 ) -> pd.DataFrame:
-    """Apply Savitzky-Golay denoising to the CO2 column.
+    """Apply denoising to the CO2 column.
+
+    Supports two methods:
+    - "savgol": Savitzky-Golay polynomial filter (existing default)
+    - "wavelet": Discrete wavelet transform with VisuShrink thresholding
 
     Args:
         df: DataFrame with CO2 column.
-        window_length: Filter window size (must be odd).
-        polyorder: Polynomial order.
-        mode: Edge handling mode (default 'nearest').
+        method: Denoising method ("savgol" or "wavelet").
+        window_length: SavGol filter window size (must be odd).
+        polyorder: SavGol polynomial order.
+        mode: SavGol edge handling mode (default 'nearest').
+        wavelet: PyWavelets wavelet name (default 'db4' — Daubechies-4).
+        wavelet_level: DWT decomposition level (default 3).
+        wavelet_threshold: Thresholding mode ('soft' or 'hard').
 
     Returns:
         DataFrame with denoised CO2. Original saved as CO2_raw.
     """
-    # Ensure window_length is odd
+    if method == "wavelet":
+        return _denoise_co2_wavelet(df, wavelet, wavelet_level, wavelet_threshold)
+
+    # Default: Savitzky-Golay
     if window_length % 2 == 0:
         window_length += 1
 
@@ -385,6 +422,68 @@ def _denoise_co2(
 
     noise_reduction = np.std(df["CO2_raw"] - df["CO2"])
     logger.info(f"  Denoised CO2 (SavGol window={window_length}, poly={polyorder}). "
+                f"Noise std removed: {noise_reduction:.2f} ppm")
+
+    return df
+
+
+def _denoise_co2_wavelet(
+    df: pd.DataFrame,
+    wavelet: str = "db4",
+    level: int = 3,
+    threshold_mode: str = "soft",
+) -> pd.DataFrame:
+    """Wavelet denoising using PyWavelets.
+
+    Decompose CO2 signal using discrete wavelet transform, apply
+    VisuShrink universal threshold to detail coefficients, and
+    reconstruct the denoised signal.
+
+    VisuShrink threshold (Donoho & Johnstone, 1994):
+        threshold = sigma * sqrt(2 * log(n))
+    where sigma is estimated from the finest detail coefficients
+    using the median absolute deviation (MAD):
+        sigma = median(|d_finest|) / 0.6745
+
+    Wavelet denoising preserves sharp transitions (e.g., sudden CO2
+    rise when people enter) better than Savitzky-Golay, which smooths
+    them as polynomial artifacts.
+
+    Args:
+        df: DataFrame with CO2 column.
+        wavelet: Wavelet name (default 'db4' — good balance of
+            smoothness and compact support for sensor signals).
+        level: Decomposition level (default 3).
+        threshold_mode: 'soft' (default, shrinks coefficients) or
+            'hard' (zeroes coefficients below threshold).
+
+    Returns:
+        DataFrame with denoised CO2. Original saved as CO2_raw.
+    """
+    import pywt
+
+    co2 = df["CO2"].values.copy()
+    df["CO2_raw"] = co2.copy()
+
+    # Decompose: [approx, detail_level, ..., detail_1]
+    coeffs = pywt.wavedec(co2, wavelet, level=level)
+
+    # Estimate noise std from finest detail coefficients (MAD estimator)
+    # MAD/0.6745 is a robust estimate of std for Gaussian noise
+    sigma = float(np.median(np.abs(coeffs[-1]))) / 0.6745
+    threshold = sigma * np.sqrt(2 * np.log(len(co2)))
+
+    # Threshold detail coefficients; keep approximation untouched
+    denoised_coeffs = [coeffs[0]]
+    for detail in coeffs[1:]:
+        denoised_coeffs.append(pywt.threshold(detail, threshold, mode=threshold_mode))
+
+    # Reconstruct — waverec may return array slightly longer than input
+    reconstructed = pywt.waverec(denoised_coeffs, wavelet)
+    df["CO2"] = reconstructed[:len(co2)]
+
+    noise_reduction = float(np.std(df["CO2_raw"] - df["CO2"]))
+    logger.info(f"  Denoised CO2 (Wavelet {wavelet}, level={level}, {threshold_mode}). "
                 f"Noise std removed: {noise_reduction:.2f} ppm")
 
     return df
@@ -453,3 +552,119 @@ def _log_nan_impact(split_name: str, df: pd.DataFrame, step_name: str) -> None:
     n_clean = len(df) - n_nan_rows
     logger.info(f"  [{split_name}] After {step_name}: {n_nan_rows} rows with NaN, "
                 f"{n_clean} clean rows")
+
+
+# ──────────────────────────────────────────────────────────────────────
+#  Occupancy proxy features
+# ──────────────────────────────────────────────────────────────────────
+
+def _compute_hourly_co2_baseline(
+    df: pd.DataFrame,
+    percentile: int = 10,
+) -> pd.Series:
+    """Compute per-hour CO2 baseline from train data only.
+
+    Uses a low percentile (default 10th) to approximate the typical
+    unoccupied CO2 level for each hour of the day. Low percentiles
+    capture the floor of the distribution, which corresponds to
+    empty-room conditions.
+
+    Args:
+        df: Training DataFrame with CO2 and datetime columns.
+        percentile: Percentile to use as baseline (default 10).
+
+    Returns:
+        Series indexed by hour (0-23) with baseline CO2 values.
+    """
+    if "datetime" in df.columns:
+        hours = pd.to_datetime(df["datetime"]).dt.hour
+    else:
+        hours = pd.DatetimeIndex(df.index).hour  # type: ignore[attr-defined]
+
+    return df.groupby(hours)["CO2"].quantile(percentile / 100.0)
+
+
+def _compute_occupancy_features(
+    df: pd.DataFrame,
+    interval_minutes: int,
+    config: dict,
+    train_baseline: pd.Series | None,
+    is_train: bool,
+) -> tuple[pd.DataFrame, pd.Series | None]:
+    """Compute occupancy proxy features within a single split.
+
+    Three feature groups:
+    1. occupancy_binary: 1 when dCO2 is positive for a sustained period,
+       indicating people are generating CO2 in the room.
+    2. hour_weekday_sin/cos: sin/cos encoding of the 168-hour weekly cycle
+       (hour × 7 + weekday), capturing recurring occupancy schedules.
+    3. CO2_deviation_from_baseline: how far above the typical unoccupied
+       level for this hour, indicating excess CO2 from human presence.
+
+    Args:
+        df: DataFrame for a single split (must have dCO2 and CO2 columns).
+        interval_minutes: Sampling interval in minutes.
+        config: Occupancy features config dict.
+        train_baseline: Hourly CO2 baseline from training split. None when
+            processing the train split itself (will be computed here).
+        is_train: Whether this is the training split.
+
+    Returns:
+        Tuple of (modified DataFrame, hourly_baseline). The baseline is
+        returned so it can be passed to subsequent splits.
+    """
+    threshold = config.get("dco2_threshold_ppm_per_hour", 5.0)
+    min_sustained = config.get("min_sustained_steps", 3)
+    baseline_percentile = config.get("baseline_percentile", 10)
+
+    # --- 1. Binary occupancy proxy ---
+    # Sustained positive dCO2 indicates people generating CO2.
+    # A rolling majority vote smooths transient fluctuations.
+    if "dCO2" in df.columns:
+        positive_rate = (df["dCO2"] > threshold).astype(float)
+        df["occupancy_binary"] = (
+            positive_rate.rolling(window=min_sustained, min_periods=1).mean() > 0.5
+        ).astype(float)
+    else:
+        df["occupancy_binary"] = 0.0
+
+    # --- 2. Hour-weekday interaction encoding ---
+    # Encodes the full 168-hour weekly cycle (24h * 7 days) as sin/cos.
+    # This captures recurring patterns like "Tuesday 9am" vs "Sunday 3pm".
+    if "datetime" in df.columns:
+        dt = pd.to_datetime(df["datetime"])
+        hour = dt.dt.hour + dt.dt.minute / 60.0
+        day_of_week = dt.dt.dayofweek
+    else:
+        dt_idx = pd.DatetimeIndex(df.index)
+        hour = dt_idx.hour + dt_idx.minute / 60.0  # type: ignore[operator]
+        day_of_week = dt_idx.dayofweek  # type: ignore[attr-defined]
+
+    weekly_position = (day_of_week * 24.0 + hour) / 168.0
+    df["hour_weekday_sin"] = np.sin(2 * np.pi * weekly_position)
+    df["hour_weekday_cos"] = np.cos(2 * np.pi * weekly_position)
+
+    # --- 3. CO2 deviation from hourly baseline ---
+    # Fit baseline on train only to prevent leakage.
+    if is_train:
+        train_baseline = _compute_hourly_co2_baseline(df, baseline_percentile)
+
+    if train_baseline is not None:
+        if "datetime" in df.columns:
+            hours = pd.to_datetime(df["datetime"]).dt.hour
+        else:
+            hours = pd.DatetimeIndex(df.index).hour  # type: ignore[attr-defined]
+
+        df["CO2_deviation_from_baseline"] = (
+            df["CO2"].values - hours.map(train_baseline).values
+        )
+    else:
+        df["CO2_deviation_from_baseline"] = 0.0
+
+    n_occupied = int(df["occupancy_binary"].sum())
+    logger.info(
+        f"  Occupancy features: {n_occupied}/{len(df)} rows classified as occupied "
+        f"(threshold={threshold} ppm/h, sustained={min_sustained} steps)"
+    )
+
+    return df, train_baseline

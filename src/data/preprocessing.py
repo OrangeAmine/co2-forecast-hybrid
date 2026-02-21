@@ -188,6 +188,50 @@ def compute_dco2(
     return df
 
 
+def log_transform_target(
+    df: pd.DataFrame,
+    target_column: str = "CO2",
+    offset: float = 400.0,
+) -> pd.DataFrame:
+    """Apply log transform to target: log(CO2 - offset + 1).
+
+    CO2 concentrations are bounded below by ~400 ppm (outdoor baseline).
+    The log transform stabilizes heteroscedastic errors where prediction
+    errors are proportional to CO2 level (higher CO2 → larger errors).
+    The +1 prevents log(0) when CO2 equals the offset.
+
+    Args:
+        df: DataFrame with target column.
+        target_column: Name of the target column (default "CO2").
+        offset: Value to subtract before log (default 400 ppm outdoor baseline).
+
+    Returns:
+        DataFrame with transformed target. Original stored as {target}_original.
+    """
+    df[f"{target_column}_original"] = df[target_column].copy()
+    df[target_column] = np.log(df[target_column] - offset + 1)
+    return df
+
+
+def inverse_log_transform_target(
+    values: np.ndarray,
+    offset: float = 400.0,
+) -> np.ndarray:
+    """Inverse of log_transform_target.
+
+    Converts log-space predictions back to original CO2 ppm scale:
+        CO2 = exp(values) + offset - 1
+
+    Args:
+        values: Log-transformed values.
+        offset: Same offset used in log_transform_target (default 400).
+
+    Returns:
+        Values in original ppm scale.
+    """
+    return np.exp(values) + offset - 1
+
+
 def create_sequences(
     data: np.ndarray,
     lookback: int,
