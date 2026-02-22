@@ -3,7 +3,7 @@
 Runs 7 models x 4 variants x 2 horizons = 56 training runs to find
 the best preprocessing configuration for CO2 forecasting.
 
-Model hyperparameters are FIXED across all variants — only the
+Model hyperparameters are FIXED across all variants - only the
 preprocessing and feature set changes.
 
 Usage:
@@ -94,7 +94,7 @@ def _append_result_row(summary_path: Path, row: dict) -> None:
     row_df = pd.DataFrame([row])
     row_df.to_csv(summary_path, mode="a", header=write_header, index=False)
 
-ALL_MODELS = ["lstm", "cnn_lstm", "hmm_lstm", "tft", "sarima", "xgboost", "catboost"]
+ALL_MODELS = ["lstm", "cnn_lstm", "hmm_lstm", "tft", "xgboost", "catboost"]
 
 # Model config YAML files
 MODEL_CONFIGS = {
@@ -149,9 +149,9 @@ def _build_datamodule_from_splits(
     return dm
 
 
-# ──────────────────────────────────────────────────────────────────────
+# ----------------------------------------------------------------------
 #  Per-model train+evaluate functions
-# ──────────────────────────────────────────────────────────────────────
+# ----------------------------------------------------------------------
 
 def run_lstm(config: dict, dm: CO2DataModule, run_name: str) -> dict:
     """Train and evaluate LSTM."""
@@ -321,7 +321,7 @@ def run_tft(
         log_every_n_steps=training_cfg.get("log_every_n_steps", 10),
         enable_progress_bar=True,
         logger=TensorBoardLogger(save_dir=str(run_dir), name="tb_logs"),
-        deterministic=True,
+        deterministic="warn",
     )
 
     trainer.fit(tft, train_dataloaders=train_dl, val_dataloaders=val_dl)
@@ -424,6 +424,7 @@ def run_single_experiment(
     variant_name: str,
     model_name: str,
     horizon: int,
+    cached_splits: tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame] | None = None,
     epochs_override: int | None = None,
 ) -> dict:
     """Run a single variant x model x horizon experiment.
@@ -432,6 +433,8 @@ def run_single_experiment(
         variant_name: Preprocessing variant key.
         model_name: Model key.
         horizon: Forecast horizon in hours.
+        cached_splits: Pre-computed (train, val, test) DataFrames to avoid
+            reloading raw XLS files for every run.
         epochs_override: Override max epochs if set.
 
     Returns:
@@ -449,12 +452,15 @@ def run_single_experiment(
     run_name = f"{variant_name}_{model_name}_h{horizon}"
     seed_everything(config["training"]["seed"])
 
-    # Get pre-split DataFrames from pipeline
-    raw_dir = Path(config["data"].get("raw_dir", "data/raw"))
-    train_df, val_df, test_df = run_preprocessing_pipeline(
-        raw_dir=raw_dir,
-        variant_config=config,
-    )
+    # Use cached splits or compute from pipeline
+    if cached_splits is not None:
+        train_df, val_df, test_df = cached_splits
+    else:
+        raw_dir = Path(config["data"].get("raw_dir", "data/raw"))
+        train_df, val_df, test_df = run_preprocessing_pipeline(
+            raw_dir=raw_dir,
+            variant_config=config,
+        )
 
     if model_name == "hmm_lstm":
         return run_hmm_lstm(config, train_df.copy(), val_df.copy(), test_df.copy(), run_name)
@@ -489,7 +495,7 @@ def generate_comparison_plot(summary_df: pd.DataFrame, output_path: Path) -> Non
         subset = summary_df[summary_df["horizon"] == horizon]
         pivot = subset.pivot(index="model", columns="variant", values="rmse")
         pivot.plot(kind="bar", ax=ax, rot=45)
-        ax.set_title(f"Test RMSE by Variant — {horizon}h Horizon")
+        ax.set_title(f"Test RMSE by Variant - {horizon}h Horizon")
         ax.set_ylabel("RMSE (ppm)")
         ax.set_xlabel("")
         ax.legend(title="Variant", fontsize=8)
@@ -575,12 +581,28 @@ def main() -> None:
     print(f"  Horizons: {args.horizons}")
     print(f"  Total runs: {total_runs}")
     if completed:
-        print(f"  Resuming: {len(completed)} runs already completed — will skip them")
+        print(f"  Resuming: {len(completed)} runs already completed - will skip them")
     print(f"{'='*70}\n")
 
+    import gc
+
     run_count = 0
+    # Cache pipeline results per variant to avoid reloading XLS files
+    pipeline_cache: dict[str, tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]] = {}
 
     for variant in args.variants:
+        # Pre-compute splits for this variant (once, reused across models/horizons)
+        if variant not in pipeline_cache:
+            print(f"\n  Loading pipeline for {variant}...")
+            _cfg = load_full_config(variant, args.models[0])
+            raw_dir = Path(_cfg["data"].get("raw_dir", "data/raw"))
+            pipeline_cache[variant] = run_preprocessing_pipeline(
+                raw_dir=raw_dir, variant_config=_cfg,
+            )
+            print(f"  Pipeline loaded: train={len(pipeline_cache[variant][0])}, "
+                  f"val={len(pipeline_cache[variant][1])}, "
+                  f"test={len(pipeline_cache[variant][2])} rows")
+
         for horizon in args.horizons:
             for model_name in args.models:
                 run_count += 1
@@ -589,12 +611,12 @@ def main() -> None:
                 # Skip runs that already succeeded in a previous execution
                 if (variant, model_name, horizon) in completed:
                     skipped += 1
-                    print(f"  {label} {variant} | {model_name} | h={horizon} — SKIPPED (already done)")
+                    print(f"  {label} {variant} | {model_name} | h={horizon} - SKIPPED (already done)")
                     continue
 
-                print(f"\n{'─'*60}")
+                print(f"\n{'-'*60}")
                 print(f"  {label} {variant} | {model_name} | h={horizon}")
-                print(f"{'─'*60}")
+                print(f"{'-'*60}")
 
                 t0 = time.time()
                 try:
@@ -602,6 +624,7 @@ def main() -> None:
                         variant_name=variant,
                         model_name=model_name,
                         horizon=horizon,
+                        cached_splits=pipeline_cache[variant],
                         epochs_override=args.epochs,
                     )
                     elapsed = time.time() - t0
@@ -637,6 +660,11 @@ def main() -> None:
 
                 # Write each result immediately so progress survives interruptions
                 _append_result_row(SUMMARY_CSV, row)
+
+                # Free GPU memory between runs to prevent OOM hangs
+                gc.collect()
+                if torch.cuda.is_available():
+                    torch.cuda.empty_cache()
 
     # Reload full results from disk (previous + current runs combined)
     output_dir = Path("results/preprocessing_comparison")

@@ -1,0 +1,39 @@
+# Occupancy inference configuration
+# Default thresholds for all 6 detection methods
+
+detectors:
+  absolute_threshold:
+    co2_threshold_ppm: 500        # Occupied when CO2 exceeds this level
+    outdoor_baseline_ppm: 410     # Assumed outdoor/fresh-air CO2 baseline
+
+  rate_of_change:
+    dco2_threshold_ppm_per_hour: 5.0   # Rising CO2 rate indicating occupancy
+    smoothing_window: 3                 # Rolling window for dCO2 smoothing
+
+  adaptive_threshold:
+    baseline_percentile: 75       # Percentile of hourly CO2 to set threshold
+    margin_ppm: 50                # Additional margin above percentile
+
+  hybrid:
+    # Inherits parameters from absolute_threshold and rate_of_change
+    # OR-gate: occupied if EITHER condition is met
+
+  state_machine:
+    onset_dco2_threshold: 5.0     # dCO2 rate to trigger occupancy onset
+    sustain_co2_threshold: 500    # CO2 level to sustain occupied state
+    timeout_steps: 6              # Steps below sustain threshold before releasing
+    min_onset_steps: 2            # Minimum consecutive onset steps to latch
+
+  diarra:
+    # Diarra et al. (Sensors 2023, 23(23):9603) four-state classification
+    # Thresholds tuned for SalonBM dataset:
+    #   - CO2 median ~575 ppm, p75 ~656 ppm  -> 600 ppm separates baseline from elevated
+    #   - Noise floor ~46 dB, p75 ~54.5 dB   -> 55 dB captures active human presence
+    #   - dCO2 mean ~0, p75 ~15 ppm/h        -> 5 ppm/h filters sensor noise from real generation
+    co2_high_ppm: 600             # Threshold separating high/low CO2 (> train p50)
+    dco2_positive_threshold: 5.0  # Meaningful positive rate (above sensor noise)
+    noise_high_db: 55.0           # Above p75 noise — active human presence
+
+evaluation:
+  consensus_method: "majority"    # "majority" or "unanimous"
+  min_agreement: 0.5              # Minimum fraction of detectors to agree

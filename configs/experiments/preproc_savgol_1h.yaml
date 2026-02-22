@@ -1,0 +1,51 @@
+# Savitzky-Golay smoothing pipeline — 1-hour resolution
+#
+# Produces pre-processed .pt tensors in data/processed/savgol_L{lookback}_H{horizon}/
+# for each lookback/horizon combination.
+#
+# Usage:
+#   python data/pipelines/pipeline_savgol.py
+#   python data/pipelines/pipeline_savgol.py --config configs/experiments/preproc_savgol_1h.yaml
+
+experiment:
+  name: "preproc_savgol_1h"
+  label: "Savitzky-Golay (1h)"
+  description: "Savgol-smoothed CO2, hourly resolution, multi-horizon"
+
+data:
+  interval_minutes: 60
+  samples_per_hour: 1
+  max_interp_gap_minutes: 120       # Interpolate gaps up to 2 hours
+  max_ffill_minutes: 120            # Forward-fill during resampling
+  output_dir: "data/processed"      # Base dir; subdirs are savgol_L{L}_H{H}/
+
+  # Chronological split ratios [train, val, test]
+  split_ratios: [0.8, 0.1, 0.1]
+
+  # Pipeline variant used by CO2DataModule when loading these splits
+  pipeline_variant: "savgol"
+
+  # Feature and target columns (post-normalization columns in CSVs)
+  target_column: "CO2"
+  feature_columns:
+    - "Temperature"
+    - "Humidity"
+    - "Noise"
+
+# Savitzky-Golay filter settings
+savgol:
+  window_length: 7
+  polyorder: 2
+  # Sensor columns to interpolate & normalize. Pressure is available in the
+  # raw data but excluded here because the original pipeline that produced
+  # the existing .pt files did not include it.
+  columns: ["CO2", "Temperature", "Humidity", "Noise"]
+  # Columns to actually smooth (others are left raw-normalized)
+  smooth_columns: ["CO2"]
+
+# Sliding window sequence settings
+sequences:
+  target: "CO2"
+  lookback: 24                      # 24 hours (= 24 steps at 1h)
+  # Generate separate output dirs for each horizon
+  horizons: [1, 6, 12, 24]

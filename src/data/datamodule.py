@@ -9,6 +9,7 @@ import joblib
 import numpy as np
 import pandas as pd
 import pytorch_lightning as pl
+import torch
 from sklearn.preprocessing import MinMaxScaler, RobustScaler, StandardScaler
 from torch.utils.data import DataLoader
 
@@ -30,10 +31,13 @@ class CO2DataModule(pl.LightningDataModule):
     and DataLoader creation. Stores fitted scalers for inverse
     transformation at evaluation time.
 
-    Supports two data loading paths:
+    Supports three data loading paths:
         1. Pipeline-based: Uses ``pipeline.run_preprocessing_pipeline()``
-           when ``data.pipeline_variant`` is set in config.
-        2. CSV-based (legacy): Loads from ``data.processed_csv`` when no
+           when ``data.pipeline_variant`` is ``"simple"`` or ``"enhanced"``.
+        2. Savgol (pre-processed .pt): Loads pre-built tensors from disk
+           when ``data.pipeline_variant`` is ``"savgol"``. The .pt files
+           are produced by ``data/pipelines/pipeline_savgol.py``.
+        3. CSV-based (legacy): Loads from ``data.processed_csv`` when no
            pipeline variant is specified. Kept for backward compatibility
            with existing training scripts that don't use experiment configs.
 
@@ -51,10 +55,11 @@ class CO2DataModule(pl.LightningDataModule):
         self.feature_columns: list[str] = self.data_cfg["feature_columns"]
         self.target_column: str = self.data_cfg["target_column"]
 
-        # Convert hours to steps
-        sph = self.data_cfg["samples_per_hour"]
-        self.lookback_steps = self.data_cfg["lookback_hours"] * sph
-        self.horizon_steps = self.data_cfg["forecast_horizon_hours"] * sph
+        # Convert hours to steps. For savgol variant the sequences config
+        # may provide lookback/horizon directly in steps; fall back gracefully.
+        sph = self.data_cfg.get("samples_per_hour", 1)
+        self.lookback_steps = self.data_cfg.get("lookback_hours", 0) * sph
+        self.horizon_steps = self.data_cfg.get("forecast_horizon_hours", 0) * sph
 
         self.feature_scaler: StandardScaler | MinMaxScaler | RobustScaler | None = None
         self.target_scaler: StandardScaler | MinMaxScaler | RobustScaler | None = None
@@ -84,8 +89,11 @@ class CO2DataModule(pl.LightningDataModule):
 
         pipeline_variant = self.data_cfg.get("pipeline_variant")
 
-        if pipeline_variant is not None:
-            # New split-aware pipeline path
+        if pipeline_variant == "savgol":
+            # Pre-processed .pt files from data/pipelines/pipeline_savgol.py
+            self._setup_from_savgol_pt()
+        elif pipeline_variant is not None:
+            # Split-aware pipeline path (simple / enhanced)
             self._setup_from_pipeline()
         else:
             # Legacy CSV-loading path (for benchmark and existing scripts)
@@ -102,6 +110,71 @@ class CO2DataModule(pl.LightningDataModule):
         )
 
         self.build_datasets(train_df, val_df, test_df)
+
+    def _setup_from_savgol_pt(self) -> None:
+        """Load pre-built tensors produced by pipeline_savgol.py.
+
+        The .pt files contain ``{X, y, metadata}`` dicts where X and y are
+        already scaled and windowed.  The ``sequences`` config section
+        specifies which lookback/horizon directory to load.
+        """
+        seq_cfg = self.config.get("sequences", {})
+        lookback = seq_cfg.get("lookback", self.lookback_steps)
+        horizon = seq_cfg.get("horizon", self.horizon_steps)
+
+        base_dir = Path(self.data_cfg.get("output_dir", "data/processed"))
+        pt_dir = base_dir / f"savgol_L{lookback}_H{horizon}"
+
+        if not pt_dir.exists():
+            raise FileNotFoundError(
+                f"Savgol tensor directory not found: {pt_dir}. "
+                f"Run data/pipelines/pipeline_savgol.py first."
+            )
+
+        logger.info(f"Loading savgol tensors from {pt_dir}")
+
+        datasets: dict[str, TimeSeriesDataset] = {}
+        train_meta: dict = {}
+        for split in ["train", "val", "test"]:
+            pt_path = pt_dir / f"{split}.pt"
+            payload = torch.load(pt_path, weights_only=False)
+            X = payload["X"].numpy()
+            y = payload["y"].numpy()
+            datasets[split] = TimeSeriesDataset(X, y)
+            logger.info(f"  {split}: X={X.shape}, y={y.shape}")
+            if split == "train":
+                train_meta = payload.get("metadata", {})
+
+        self.train_dataset = datasets["train"]
+        self.val_dataset = datasets["val"]
+        self.test_dataset = datasets["test"]
+
+        # Override lookback/horizon from the actual tensor shapes so
+        # downstream code (models, evaluation) uses the correct values.
+        self.lookback_steps = datasets["train"].X.shape[1]
+        self.horizon_steps = datasets["train"].y.shape[1]
+
+        # Store normalization stats from metadata for inverse transforms.
+        # The savgol pipeline stores (mean, std) per column; build a
+        # StandardScaler-compatible target_scaler so evaluation code can
+        # call inverse_scale_target() without changes.
+        norm_stats = train_meta.get("norm_stats", {})
+        target_stats = norm_stats.get(self.target_column)
+        if target_stats is not None:
+            mean, std = target_stats
+            self.target_scaler = StandardScaler()
+            self.target_scaler.mean_ = np.array([mean])
+            self.target_scaler.scale_ = np.array([std])
+            self.target_scaler.var_ = np.array([std ** 2])
+            self.target_scaler.n_features_in_ = 1
+            self.target_scaler.n_samples_seen_ = 1
+
+        # Load test dates from CSV if available (for plotting)
+        test_csv = pt_dir / "test.csv"
+        if test_csv.exists():
+            test_df = pd.read_csv(test_csv)
+            if "datetime" in test_df.columns:
+                self.test_dates = pd.DatetimeIndex(test_df["datetime"])
 
     def _setup_from_csv(self) -> None:
         """Load data from a pre-processed CSV file (legacy path)."""
