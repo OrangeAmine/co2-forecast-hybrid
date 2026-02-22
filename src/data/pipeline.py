@@ -20,7 +20,12 @@ import numpy as np
 import pandas as pd
 from scipy.signal import savgol_filter
 
-from src.data.preprocessing import chronological_split, compute_dco2
+from src.data.preprocessing import (
+    chronological_split,
+    compute_dco2,
+    compute_noise_features,
+    compute_noise_tier2_features,
+)
 from src.data.raw_processing import run_pipeline as run_raw_pipeline
 
 logger = logging.getLogger(__name__)
@@ -289,11 +294,17 @@ def after_split_enhanced(
         splits[name] = _clip_outliers(splits[name], bounds)
 
     # Steps 13-15: dCO2, lags, rolling, weekday per split, then drop NaN
+    # Noise feature configuration
+    noise_cfg = config.get("noise_features", {})
+    noise_tier1_enabled = noise_cfg.get("tier1", True)  # on by default in enhanced
+    noise_tier2_enabled = noise_cfg.get("tier2", False)  # off by default
+
     # Process train first so we can extract the hourly CO2 baseline for
     # occupancy features (fit on train only, applied to val/test).
     occupancy_cfg = config.get("occupancy_features", {})
     occupancy_enabled = occupancy_cfg.get("enabled", False)
     hourly_baseline: pd.Series | None = None
+    hourly_noise_baseline: pd.Series | None = None
 
     results = []
     for name in ["train", "val", "test"]:
@@ -313,6 +324,25 @@ def after_split_enhanced(
         for w in rolling_windows:
             df[f"CO2_rolling_mean_{w}"] = df["CO2"].rolling(window=w, min_periods=1).mean()
             df[f"CO2_rolling_std_{w}"] = df["CO2"].rolling(window=w, min_periods=1).std()
+
+        # Step 14b-2: Noise-derived features (mirrors CO2 feature pattern)
+        if noise_tier1_enabled:
+            df = compute_noise_features(
+                df,
+                interval_minutes=interval_minutes,
+                lag_steps=lag_steps,
+                rolling_windows=rolling_windows,
+            )
+
+        # Step 14b-3: Tier 2 acoustics-informed noise features (optional)
+        if noise_tier2_enabled:
+            df, hourly_noise_baseline = compute_noise_tier2_features(
+                df,
+                hourly_noise_baseline=hourly_noise_baseline,
+                is_train=(name == "train"),
+                baseline_percentile=noise_cfg.get("baseline_percentile", 75),
+                corr_window=noise_cfg.get("corr_window", 6),
+            )
 
         # Step 14c: Weekday sin/cos
         if "datetime" in df.columns:

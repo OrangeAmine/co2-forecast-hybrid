@@ -188,6 +188,146 @@ def compute_dco2(
     return df
 
 
+def compute_noise_features(
+    df: pd.DataFrame,
+    interval_minutes: int,
+    noise_column: str = "Noise",
+    lag_steps: list[int] | None = None,
+    rolling_windows: list[int] | None = None,
+) -> pd.DataFrame:
+    """Compute noise-derived features within a single split.
+
+    Mirrors the CO2 feature engineering pattern (dCO2, lags, rolling stats)
+    applied to the Noise (dB) column. Noise variability and rate of change
+    are strong occupancy indicators — sudden acoustic events signal human
+    activity, while sustained quiet signals vacancy.
+
+    Features produced:
+        Tier 1 (always):
+            dNoise              — rate of change in dB/hour
+            Noise_lag_{k}       — lag features at configurable offsets
+            Noise_rolling_mean_{w}  — smoothed mean over w steps
+            Noise_rolling_std_{w}   — variability over w steps
+
+    Args:
+        df: DataFrame containing the Noise column.
+        interval_minutes: Sampling interval in minutes.
+        noise_column: Name of the noise column.
+        lag_steps: Lag offsets in timesteps (default [1, 6, 24] for 1h data).
+        rolling_windows: Rolling window sizes (default [3, 6]).
+
+    Returns:
+        DataFrame with noise-derived feature columns added.
+    """
+    if noise_column not in df.columns:
+        return df
+
+    if lag_steps is None:
+        lag_steps = [1, 6, 24]
+    if rolling_windows is None:
+        rolling_windows = [3, 6]
+
+    # dNoise: rate of change (dB/hour)
+    # First row of each split gets NaN (no previous value), same as dCO2
+    hours_per_step = interval_minutes / 60.0
+    df["dNoise"] = df[noise_column].diff() / hours_per_step
+
+    # Lag features
+    for lag in lag_steps:
+        df[f"Noise_lag_{lag}"] = df[noise_column].shift(lag)
+
+    # Rolling statistics
+    for w in rolling_windows:
+        df[f"Noise_rolling_mean_{w}"] = (
+            df[noise_column].rolling(window=w, min_periods=1).mean()
+        )
+        df[f"Noise_rolling_std_{w}"] = (
+            df[noise_column].rolling(window=w, min_periods=1).std()
+        )
+
+    return df
+
+
+def compute_noise_tier2_features(
+    df: pd.DataFrame,
+    noise_column: str = "Noise",
+    co2_column: str = "CO2",
+    hourly_noise_baseline: pd.Series | None = None,
+    is_train: bool = False,
+    baseline_percentile: int = 75,
+    corr_window: int = 6,
+) -> tuple[pd.DataFrame, pd.Series | None]:
+    """Compute Tier 2 acoustics-informed noise features.
+
+    These features go beyond simple mirroring of the CO2 pattern and
+    exploit domain knowledge about acoustic signals:
+
+    Features produced:
+        Noise_energy                — linear energy: 10^(dB/10). Decibels are
+                                      logarithmic, so averaging in dB
+                                      underweights loud events. Linear energy
+                                      is additive and better captures bursts.
+        Noise_deviation_from_baseline — excess noise above per-hour 75th
+                                      percentile (fit on train only).
+        CO2_Noise_corr_6            — rolling Pearson correlation between CO2
+                                      and Noise over a 6-step window. High
+                                      correlation indicates co-occurring
+                                      occupancy signals.
+
+    Args:
+        df: DataFrame with Noise and CO2 columns.
+        noise_column: Name of the noise column.
+        co2_column: Name of the CO2 column.
+        hourly_noise_baseline: Per-hour noise baseline from training split.
+            None when processing train (computed here).
+        is_train: Whether this is the training split.
+        baseline_percentile: Percentile for hourly baseline (default 75).
+        corr_window: Rolling correlation window size (default 6).
+
+    Returns:
+        Tuple of (modified DataFrame, hourly_noise_baseline).
+    """
+    if noise_column not in df.columns:
+        return df, hourly_noise_baseline
+
+    # Noise energy: convert dB to linear scale
+    # dB = 10 * log10(energy) → energy = 10^(dB/10)
+    df["Noise_energy"] = np.power(10.0, df[noise_column].values / 10.0)
+
+    # Noise deviation from hourly baseline (fit on train only)
+    if is_train:
+        if "datetime" in df.columns:
+            hours = pd.to_datetime(df["datetime"]).dt.hour
+        else:
+            hours = pd.DatetimeIndex(df.index).hour
+        hourly_noise_baseline = df.groupby(hours)[noise_column].quantile(
+            baseline_percentile / 100.0
+        )
+
+    if hourly_noise_baseline is not None:
+        if "datetime" in df.columns:
+            hours = pd.to_datetime(df["datetime"]).dt.hour
+        else:
+            hours = pd.DatetimeIndex(df.index).hour
+        df["Noise_deviation_from_baseline"] = (
+            df[noise_column].values - hours.map(hourly_noise_baseline).values
+        )
+    else:
+        df["Noise_deviation_from_baseline"] = 0.0
+
+    # Rolling cross-correlation between CO2 and Noise
+    if co2_column in df.columns:
+        df["CO2_Noise_corr_6"] = (
+            df[co2_column]
+            .rolling(window=corr_window, min_periods=corr_window)
+            .corr(df[noise_column])
+        )
+    else:
+        df["CO2_Noise_corr_6"] = np.nan
+
+    return df, hourly_noise_baseline
+
+
 def log_transform_target(
     df: pd.DataFrame,
     target_column: str = "CO2",

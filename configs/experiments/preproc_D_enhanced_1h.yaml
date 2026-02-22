@@ -10,17 +10,22 @@ data:
   samples_per_hour: 1
   scaler_type: "robust"
   feature_columns:
+    # --- Sensor features ---
     - "Noise"
     - "Pression"
     - "TemperatureExt"
     - "Hrext"
+    # --- Deterministic temporal features ---
     - "Day_sin"
     - "Day_cos"
     - "Year_sin"
     - "Year_cos"
+    # --- CO2 dynamics ---
     - "dCO2"
+    # --- Weekday encoding ---
     - "Weekday_sin"
     - "Weekday_cos"
+    # --- CO2 lag & rolling ---
     - "CO2_lag_1"
     - "CO2_lag_6"
     - "CO2_lag_24"
@@ -28,6 +33,15 @@ data:
     - "CO2_rolling_std_3"
     - "CO2_rolling_mean_6"
     - "CO2_rolling_std_6"
+    # --- Noise dynamics (Tier 1) ---
+    - "dNoise"
+    - "Noise_lag_1"
+    - "Noise_lag_6"
+    - "Noise_lag_24"
+    - "Noise_rolling_mean_3"
+    - "Noise_rolling_std_3"
+    - "Noise_rolling_mean_6"
+    - "Noise_rolling_std_6"
 
 preprocessing:
   denoising:

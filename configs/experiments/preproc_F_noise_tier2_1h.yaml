@@ -1,7 +1,7 @@
 experiment:
-  name: "preproc_E"
-  label: "Enhanced + Occupancy (1h)"
-  description: "Enhanced features plus occupancy proxies (binary, weekly cycle, deviation from baseline), 1h"
+  name: "preproc_F"
+  label: "Enhanced + Noise Tier 2 (1h)"
+  description: "Enhanced features plus full noise feature engineering (Tier 1 + Tier 2), 1h"
 
 data:
   interval_minutes: 60
@@ -42,6 +42,10 @@ data:
     - "Noise_rolling_std_3"
     - "Noise_rolling_mean_6"
     - "Noise_rolling_std_6"
+    # --- Noise acoustics (Tier 2) ---
+    - "Noise_energy"
+    - "Noise_deviation_from_baseline"
+    - "CO2_Noise_corr_6"
     # --- Occupancy proxy features ---
     - "occupancy_binary"
     - "hour_weekday_sin"
@@ -58,6 +62,11 @@ preprocessing:
     columns: ["CO2", "TemperatureExt", "Hrext", "Noise", "Pression"]
   lag_steps: [1, 6, 24]
   rolling_windows: [3, 6]
+  noise_features:
+    tier1: true
+    tier2: true
+    baseline_percentile: 75
+    corr_window: 6
   occupancy_features:
     enabled: true
     dco2_threshold_ppm_per_hour: 5.0
